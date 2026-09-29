@@ -15,7 +15,7 @@ cp Info.plist "$APP/Contents/"
 for dir in ../frames-custom/*/; do
     name=$(basename "$dir")
     mkdir -p "$APP/Contents/Resources/Sprites/$name"
-    find "$dir" -maxdepth 1 -name '*.png' ! -name '_*' -exec cp {} "$APP/Contents/Resources/Sprites/$name/" \;
+    find "$dir" -maxdepth 1 \( -name '*.png' -o -name 'anchors.json' \) ! -name '_*' -exec cp {} "$APP/Contents/Resources/Sprites/$name/" \;
 done
 
 # ad-hoc signature: enough for running locally

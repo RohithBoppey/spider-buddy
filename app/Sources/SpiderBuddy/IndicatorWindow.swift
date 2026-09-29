@@ -1,7 +1,7 @@
 import AppKit
 import QuartzCore
 
-/// Small dot on the screen's top edge showing where the web will attach on release.
+/// Small dot on a screen edge showing where he will land on release.
 final class IndicatorWindow: NSPanel {
     private static let diameter: CGFloat = 10
 
@@ -36,9 +36,10 @@ final class IndicatorWindow: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    /// Centres the dot horizontally on `x`, touching the top edge of `screen`.
-    func show(x: CGFloat, on screen: NSScreen) {
-        setFrameOrigin(NSPoint(x: (x - Self.diameter / 2).rounded(), y: screen.frame.maxY - Self.diameter))
+    /// Centres the dot horizontally on `x`, touching the top or bottom edge of `screen`.
+    func show(x: CGFloat, atTop: Bool, on screen: NSScreen) {
+        let y = atTop ? screen.frame.maxY - Self.diameter : screen.frame.minY
+        setFrameOrigin(NSPoint(x: (x - Self.diameter / 2).rounded(), y: y))
         orderFrontRegardless()
     }
 
