@@ -24,14 +24,23 @@ final class Sprite {
     convenience init?(url: URL, anchor: CGPoint?) {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
-              let rgba = Self.rgba(of: image, mirrored: false) else { return nil }
+              let rgba = Self.rgba(of: image, flipX: false, flipY: false) else { return nil }
         let alpha = stride(from: 3, to: rgba.count, by: 4).map { rgba[$0] }
         self.init(name: url.deletingPathExtension().lastPathComponent, image: image, anchor: anchor, alpha: alpha)
     }
 
     /// Horizontally flipped copy (all frames face one way; the other way is mirrored at load).
     func mirrored() -> Sprite {
-        guard let rgba = Self.rgba(of: image, mirrored: true),
+        transformed(flipX: true, flipY: false)
+    }
+
+    /// Vertically flipped copy (head down, for climbing down a wall head-first).
+    func flippedVertically() -> Sprite {
+        transformed(flipX: false, flipY: true)
+    }
+
+    private func transformed(flipX: Bool, flipY: Bool) -> Sprite {
+        guard let rgba = Self.rgba(of: image, flipX: flipX, flipY: flipY),
               let provider = CGDataProvider(data: Data(rgba) as CFData),
               let flipped = CGImage(
                 width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
@@ -40,7 +49,9 @@ final class Sprite {
                 provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
         else { return self }
         let alpha = stride(from: 3, to: rgba.count, by: 4).map { rgba[$0] }
-        let flippedAnchor = anchor.map { CGPoint(x: CGFloat(width) - $0.x, y: $0.y) }
+        let flippedAnchor = anchor.map {
+            CGPoint(x: flipX ? CGFloat(width) - $0.x : $0.x, y: flipY ? CGFloat(height) - $0.y : $0.y)
+        }
         return Sprite(name: name, image: flipped, anchor: flippedAnchor, alpha: alpha)
     }
 
@@ -51,7 +62,7 @@ final class Sprite {
     }
 
     /// Premultiplied RGBA bytes, rows top to bottom.
-    private static func rgba(of image: CGImage, mirrored: Bool) -> [UInt8]? {
+    private static func rgba(of image: CGImage, flipX: Bool, flipY: Bool) -> [UInt8]? {
         let width = image.width, height = image.height
         var rgba = [UInt8](repeating: 0, count: width * height * 4)
         let drawn = rgba.withUnsafeMutableBytes { buffer -> Bool in
@@ -61,10 +72,8 @@ final class Sprite {
                 space: CGColorSpaceCreateDeviceRGB(),
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             ) else { return false }
-            if mirrored {
-                ctx.translateBy(x: CGFloat(width), y: 0)
-                ctx.scaleBy(x: -1, y: 1)
-            }
+            ctx.translateBy(x: flipX ? CGFloat(width) : 0, y: flipY ? CGFloat(height) : 0)
+            ctx.scaleBy(x: flipX ? -1 : 1, y: flipY ? -1 : 1)
             ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }

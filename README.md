@@ -25,6 +25,7 @@ quit it first (or `pkill -x SpiderBuddy`).
 | `frames-custom/` | Frames the app uses, one folder per pose: `top-hang`, `wall-ready`, `wall-crawl`, `bottom-crawl`, `pickup`. Files starting with `_` are previews and are not bundled. |
 | `frames-custom/top-hang/draw_hang.py` | Generates the hanging frames (`hang_00`–`hang_04`) and their previews. |
 | `frames-custom/bottom-crawl/prepare_crawl.py` | Splits frame 095, writes `anchors.json` (head-fixed alignment) and `_preview.gif`. |
+| `frames-custom/wall-crawl/prepare_wall.py` | Builds the wall ready frame (018 with feet planted), writes wall `anchors.json` and `_preview.gif`. |
 | `sprites-raw/` | Source sprite sheet and pose reference. |
 
 ## Regenerate the hanging frames

@@ -1,28 +1,41 @@
 import AppKit
 
 /// Owns the pet window and decides what he does: hang from the top edge, crawl along the
-/// bottom edge, dangle while dragged, fall to the bottom. Also follows the active display and
-/// hides over full-screen videos and games.
+/// bottom edge, cling to and climb the left/right walls, dangle while dragged, fall or zip to
+/// an edge when dropped. Also follows the active display and hides over full-screen videos and games.
 final class PetController {
     private let scale: CGFloat = 2
     private let dragThreshold: CGFloat = 4   // points the cursor must move before a click becomes a drag
     private let gravity: CGFloat = 2500      // points/s², for the fall to the bottom edge
+    private let zipSeconds: TimeInterval = 0.25   // sideways zip onto a wall
 
     private let window = PetWindow()
     private let view: SpriteView
     private let indicator = IndicatorWindow()
 
-    private let hang: [Sprite]               // hang_00..04
-    private let tingle: Sprite               // 087
-    private let dangle: [Sprite]             // 102, 103
-    private let crouch: [Bool: Sprite]       // 088, keyed by facing right
-    private let crawlCycle: [Bool: [Sprite]] // 089..097, keyed by facing right
+    private enum Edge { case top, bottom, left, right }
+
+    /// A wall frame set for one wall and one climbing direction.
+    private struct WallKey: Hashable {
+        let onRight: Bool
+        let goingUp: Bool
+    }
+
+    private let hang: [Sprite]                     // hang_00..04
+    private let tingle: [Bool: Sprite]             // 087, keyed by facing right
+    private let dangle: [Sprite]                   // 102, 103
+    private let crouch: [Bool: Sprite]             // 088, keyed by facing right
+    private let crawlCycle: [Bool: [Sprite]]       // 089..097, keyed by facing right
+    private let wallReady: [Bool: Sprite]          // 018, keyed by on the right wall
+    private let wallTransition: [WallKey: [Sprite]] // 129..131
+    private let wallCycle: [WallKey: [Sprite]]     // 132..141
 
     private indirect enum Mode {
         case top(TopHang)
         case bottom(BottomCrawl)
+        case wall(WallCling)
         case held(ticks: Int)
-        case falling                          // window animating down to the bottom edge
+        case flying                           // window animating to an edge (fall or zip)
         case tingle(ticks: Int, resume: Mode) // quick click: spider-sense, then carry on
     }
     private var mode: Mode
@@ -35,18 +48,32 @@ final class PetController {
         let hang = library.frames("top-hang")
         let pickup = library.frames("pickup")          // 087 tingle, 102/103 dangling
         let crawl = library.frames("bottom-crawl")     // 088 crouch, then the crawl cycle
-        guard hang.count >= 5, pickup.count >= 3, crawl.count >= 2,
-              crawl.allSatisfy({ $0.anchor != nil }) else {
-            NSLog("SpiderBuddy: missing frames (top-hang \(hang.count), pickup \(pickup.count), bottom-crawl \(crawl.count))")
+        let ready = library.frames("wall-ready")       // 018, native on the right wall
+        let climb = library.frames("wall-crawl")       // 129..131 transition, 132..141 cycle; native left wall
+        guard hang.count >= 5, pickup.count >= 3, crawl.count >= 2, ready.count >= 1, climb.count >= 4,
+              (crawl + ready + climb).allSatisfy({ $0.anchor != nil }) else {
+            NSLog("SpiderBuddy: missing frames or anchors (top-hang \(hang.count), pickup \(pickup.count), "
+                  + "bottom-crawl \(crawl.count), wall-ready \(ready.count), wall-crawl \(climb.count))")
             return nil
         }
         self.hang = hang
-        tingle = pickup[0]
+        tingle = [true: pickup[0], false: pickup[0].mirrored()]
         dangle = Array(pickup[1...2])
         let crouchRight = crawl.first { $0.name == "088" } ?? crawl[0]
         let cycleRight = crawl.filter { $0 !== crouchRight }
         crouch = [true: crouchRight, false: crouchRight.mirrored()]
         crawlCycle = [true: cycleRight, false: cycleRight.map { $0.mirrored() }]
+
+        wallReady = [true: ready[0], false: ready[0].mirrored()]
+        let transitionLeft = Array(climb.prefix(3)), cycleLeft = Array(climb.dropFirst(3))
+        func variants(_ frames: [Sprite]) -> [WallKey: [Sprite]] {
+            [WallKey(onRight: false, goingUp: true): frames,
+             WallKey(onRight: false, goingUp: false): frames.map { $0.flippedVertically() },
+             WallKey(onRight: true, goingUp: true): frames.map { $0.mirrored() },
+             WallKey(onRight: true, goingUp: false): frames.map { $0.mirrored().flippedVertically() }]
+        }
+        wallTransition = variants(transitionLeft)
+        wallCycle = variants(cycleLeft)
 
         view = SpriteView(scale: scale)
         screen = NSScreen.main ?? NSScreen.screens[0]
@@ -89,10 +116,13 @@ final class PetController {
         case .bottom(var bottom):
             bottom.tick(bounds: crawlBounds(on: screen))
             return .bottom(bottom)
+        case .wall(var wall):
+            wall.tick(bounds: wallBounds(on: screen))
+            return .wall(wall)
         case .held(let n):
             return .held(ticks: n + 1)
-        case .falling:
-            return .falling
+        case .flying:
+            return .flying
         case .tingle(let n, let resume):
             return n > 1 ? .tingle(ticks: n - 1, resume: resume) : resume
         }
@@ -108,20 +138,39 @@ final class PetController {
                 ? crouch[bottom.facingRight]!
                 : crawlCycle[bottom.facingRight]![bottom.cycleIndex]
             layoutOnGround(sprite, anchor: sprite.anchor!, x: bottom.x, lift: bottom.lift)
+        case .wall(let wall):
+            let sprite = wallSprite(for: wall)
+            layoutOnWall(sprite, anchor: sprite.anchor!, onRight: wall.onRight, y: wall.y)
         case .held(let n):
             // spider-sense for the first moment, then dangle from the cursor
-            layoutHeld(n < 3 ? tingle : dangle[(n / 2) % 2])
-        case .falling:
+            layoutHeld(n < 3 ? tingle[true]! : dangle[(n / 2) % 2])
+        case .flying:
             break
         case .tingle(_, let resume):
             switch resume {
             case .top(let top):
-                layoutHanging(tingle, anchorX: tingle.width / 2, x: top.x, webLength: top.webLength)
+                let sprite = tingle[true]!
+                layoutHanging(sprite, anchorX: sprite.width / 2, x: top.x, webLength: top.webLength)
             case .bottom(let bottom):
-                layoutOnGround(tingle, anchor: CGPoint(x: tingle.width / 2, y: tingle.height), x: bottom.x, lift: 0)
+                let sprite = tingle[true]!
+                layoutOnGround(sprite, anchor: CGPoint(x: sprite.width / 2, y: sprite.height), x: bottom.x, lift: 0)
+            case .wall(let wall):
+                // facing away from the wall, back against it
+                let sprite = tingle[!wall.onRight]!
+                let anchor = CGPoint(x: wall.onRight ? CGFloat(sprite.width) : 0, y: CGFloat(sprite.height) / 2)
+                layoutOnWall(sprite, anchor: anchor, onRight: wall.onRight, y: wall.y)
             default:
                 break
             }
+        }
+    }
+
+    private func wallSprite(for wall: WallCling) -> Sprite {
+        let key = WallKey(onRight: wall.onRight, goingUp: wall.goingUp)
+        switch wall.phase {
+        case .ready: return wallReady[wall.onRight]!
+        case .into(let step), .outOf(let step): return wallTransition[key]![step]
+        case .climb: return wallCycle[key]![wall.cycleIndex]
         }
     }
 
@@ -131,23 +180,35 @@ final class PetController {
         let webHeight = menuBar + CGFloat(webLength) * scale
         let size = view.size(for: sprite, webHeight: webHeight)
         let origin = NSPoint(x: (x - CGFloat(anchorX) * scale).rounded(), y: screen.frame.maxY - size.height)
-        window.setFrame(NSRect(origin: origin, size: size), display: false)
-        view.show(sprite, webHeight: webHeight, anchorX: anchorX)
+        place(sprite, origin: origin, size: size, webHeight: webHeight, anchorX: anchorX)
     }
 
     /// On the bottom edge: the sprite's anchor (bottom row) at screen x, `lift` points up.
     private func layoutOnGround(_ sprite: Sprite, anchor: CGPoint, x: CGFloat, lift: CGFloat) {
-        let size = view.size(for: sprite, webHeight: 0)
         let origin = NSPoint(x: (x - anchor.x * scale).rounded(),
                              y: screen.frame.minY + (CGFloat(sprite.height) - anchor.y) * scale + lift)
-        window.setFrame(NSRect(origin: origin, size: size), display: false)
-        view.show(sprite, webHeight: 0, anchorX: 0)
+        place(sprite, origin: origin)
+    }
+
+    /// On a wall: the sprite's anchor (its wall-side edge, at eye height) on the screen edge at y.
+    private func layoutOnWall(_ sprite: Sprite, anchor: CGPoint, onRight: Bool, y: CGFloat) {
+        let wallX = onRight ? screen.frame.maxX : screen.frame.minX
+        let origin = NSPoint(x: (wallX - anchor.x * scale).rounded(),
+                             y: (y - (CGFloat(sprite.height) - anchor.y) * scale).rounded())
+        place(sprite, origin: origin)
     }
 
     /// Held by the hands: the sprite's top-centre sits on the cursor, no web.
     private func layoutHeld(_ sprite: Sprite) {
-        window.setFrame(heldFrame(for: sprite, at: NSEvent.mouseLocation), display: false)
-        view.show(sprite, webHeight: 0, anchorX: 0)
+        let frame = heldFrame(for: sprite, at: NSEvent.mouseLocation)
+        place(sprite, origin: frame.origin)
+    }
+
+    private func place(_ sprite: Sprite, origin: NSPoint, size: CGSize? = nil,
+                       webHeight: CGFloat = 0, anchorX: Int = 0) {
+        let size = size ?? view.size(for: sprite, webHeight: 0)
+        window.setFrame(NSRect(origin: origin, size: size), display: false)
+        view.show(sprite, webHeight: webHeight, anchorX: anchorX)
     }
 
     private func heldFrame(for sprite: Sprite, at mouse: NSPoint) -> NSRect {
@@ -163,13 +224,13 @@ final class PetController {
         return false
     }
 
-    private var isFalling: Bool {
-        if case .falling = mode { return true }
+    private var isFlying: Bool {
+        if case .flying = mode { return true }
         return false
     }
 
     private func mouseDown() {
-        guard !isFalling else { return }
+        guard !isFlying else { return }
         mouseDownAt = NSEvent.mouseLocation
     }
 
@@ -183,9 +244,7 @@ final class PetController {
         render()
         let mouse = NSEvent.mouseLocation
         let target = screenUnderMouse()
-        let top = nearestEdgeIsTop(mouse, on: target)
-        let x = top ? clampedHangX(mouse.x, on: target) : clampedCrawlX(mouse.x, on: target)
-        indicator.show(x: x, atTop: top, on: target)
+        indicator.show(at: landingPoint(for: nearestEdge(mouse, on: target), mouse: mouse, on: target), on: target)
     }
 
     private func mouseUp() {
@@ -202,12 +261,17 @@ final class PetController {
         let mouse = NSEvent.mouseLocation
         screen = screenUnderMouse()
         lastActiveID = (NSScreen.main ?? screen).displayID   // stay here until the active display changes
-        if nearestEdgeIsTop(mouse, on: screen) {
+        switch nearestEdge(mouse, on: screen) {
+        case .top:
             // web attaches to the top edge straight above the release point, then he drops
             mode = .top(TopHang(x: clampedHangX(mouse.x, on: screen), settleTicks: 3))
             render()
-        } else {
+        case .bottom:
             fall(to: clampedCrawlX(mouse.x, on: screen), from: mouse)
+        case .left:
+            zip(toRightWall: false, from: mouse)
+        case .right:
+            zip(toRightWall: true, from: mouse)
         }
     }
 
@@ -218,21 +282,61 @@ final class PetController {
         var end = start
         end.origin.y = screen.frame.minY
         let height = start.minY - end.minY
-        mode = .falling
-        view.show(sprite, webHeight: 0, anchorX: 0)
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = height > 0 ? TimeInterval(sqrt(2 * height / gravity)) : 0
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            window.animator().setFrame(end, display: true)
-        }, completionHandler: { [weak self] in
+        fly(sprite, to: end, seconds: height > 0 ? TimeInterval(sqrt(2 * height / gravity)) : 0, easing: .easeIn) {
+            [weak self] in
             guard let self else { return }
             self.mode = .bottom(BottomCrawl(x: x, cycleCount: self.crawlCycle[true]!.count))
-            self.render()
+        }
+    }
+
+    /// Zips sideways from the cursor onto a wall, then holds the ready pose there.
+    private func zip(toRightWall onRight: Bool, from mouse: NSPoint) {
+        let sprite = dangle[1]
+        let start = heldFrame(for: sprite, at: mouse)
+        var end = start
+        end.origin.x = onRight ? screen.frame.maxX - start.width : screen.frame.minX
+        let y = clampedWallY(start.midY, on: screen)
+        fly(sprite, to: end, seconds: zipSeconds, easing: .easeOut) { [weak self] in
+            guard let self else { return }
+            self.mode = .wall(WallCling(onRight: onRight, y: y,
+                                        transitionCount: self.wallTransition.values.first!.count,
+                                        cycleCount: self.wallCycle.values.first!.count))
+        }
+    }
+
+    /// Animates the window to `end` showing `sprite`, then hands over to `landed` and renders.
+    private func fly(_ sprite: Sprite, to end: NSRect, seconds: TimeInterval,
+                     easing: CAMediaTimingFunctionName, landed: @escaping () -> Void) {
+        mode = .flying
+        view.show(sprite, webHeight: 0, anchorX: 0)
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = seconds
+            context.timingFunction = CAMediaTimingFunction(name: easing)
+            window.animator().setFrame(end, display: true)
+        }, completionHandler: { [weak self] in
+            landed()
+            self?.render()
         })
     }
 
-    private func nearestEdgeIsTop(_ point: NSPoint, on screen: NSScreen) -> Bool {
-        screen.frame.maxY - point.y <= point.y - screen.frame.minY
+    private func nearestEdge(_ point: NSPoint, on screen: NSScreen) -> Edge {
+        let f = screen.frame
+        let distances: [(Edge, CGFloat)] = [
+            (.top, f.maxY - point.y), (.bottom, point.y - f.minY),
+            (.left, point.x - f.minX), (.right, f.maxX - point.x),
+        ]
+        return distances.min { $0.1 < $1.1 }!.0
+    }
+
+    /// Where the indicator dot goes: the spot on that edge he will land at.
+    private func landingPoint(for edge: Edge, mouse: NSPoint, on screen: NSScreen) -> NSPoint {
+        let f = screen.frame
+        switch edge {
+        case .top: return NSPoint(x: clampedHangX(mouse.x, on: screen), y: f.maxY)
+        case .bottom: return NSPoint(x: clampedCrawlX(mouse.x, on: screen), y: f.minY)
+        case .left: return NSPoint(x: f.minX, y: clampedWallY(mouse.y, on: screen))
+        case .right: return NSPoint(x: f.maxX, y: clampedWallY(mouse.y, on: screen))
+        }
     }
 
     /// Keeps the whole hanging sprite on screen.
@@ -247,12 +351,28 @@ final class PetController {
         return min(max(x, bounds.lowerBound), bounds.upperBound)
     }
 
+    private func clampedWallY(_ y: CGFloat, on screen: NSScreen) -> CGFloat {
+        let bounds = wallBounds(on: screen)
+        return min(max(y, bounds.lowerBound), bounds.upperBound)
+    }
+
     /// Head-anchor range that keeps every crawl frame, either way round, fully on screen.
     private func crawlBounds(on screen: NSScreen) -> ClosedRange<CGFloat> {
         let frames = crawlCycle[true]! + [crouch[true]!]
         let reach = frames.map { max($0.anchor!.x, CGFloat($0.width) - $0.anchor!.x) }.max() ?? 0
         let margin = reach * scale
         return (screen.frame.minX + margin)...(screen.frame.maxX - margin)
+    }
+
+    /// Eye-anchor range that keeps every wall frame, head up or down, below the menu bar
+    /// and above the bottom edge.
+    private func wallBounds(on screen: NSScreen) -> ClosedRange<CGFloat> {
+        let frames = wallReady.values.map { $0 } + wallTransition.values.flatMap { $0 } + wallCycle.values.flatMap { $0 }
+        let above = frames.map { $0.anchor!.y }.max() ?? 0
+        let below = frames.map { CGFloat($0.height) - $0.anchor!.y }.max() ?? 0
+        let low = screen.frame.minY + below * scale
+        let high = max(low, screen.visibleFrame.maxY - above * scale)
+        return low...high
     }
 
     private func screenUnderMouse() -> NSScreen {
@@ -265,7 +385,7 @@ final class PetController {
     /// Moves him only when the active display (keyboard focus) changes, keeping his edge and
     /// relative position; a screen you dropped him on keeps him until you focus another display.
     private func followActiveScreen() {
-        guard !isHeld, !isFalling, let active = NSScreen.main else { return }
+        guard !isHeld, !isFlying, let active = NSScreen.main else { return }
         guard active.displayID != lastActiveID else { return }
         lastActiveID = active.displayID
         guard active.displayID != screen.displayID else { return }
@@ -275,26 +395,32 @@ final class PetController {
     }
 
     private func relocated(_ mode: Mode, from old: NSScreen, to new: NSScreen) -> Mode {
-        func moved(_ x: CGFloat) -> CGFloat {
+        func movedX(_ x: CGFloat) -> CGFloat {
             new.frame.minX + (x - old.frame.minX) / old.frame.width * new.frame.width
+        }
+        func movedY(_ y: CGFloat) -> CGFloat {
+            new.frame.minY + (y - old.frame.minY) / old.frame.height * new.frame.height
         }
         switch mode {
         case .top(var top):
-            top.x = clampedHangX(moved(top.x), on: new)
+            top.x = clampedHangX(movedX(top.x), on: new)
             return .top(top)
         case .bottom(var bottom):
-            bottom.x = clampedCrawlX(moved(bottom.x), on: new)
+            bottom.x = clampedCrawlX(movedX(bottom.x), on: new)
             return .bottom(bottom)
+        case .wall(var wall):
+            wall.y = clampedWallY(movedY(wall.y), on: new)
+            return .wall(wall)
         case .tingle(let n, let resume):
             return .tingle(ticks: n, resume: relocated(resume, from: old, to: new))
-        case .held, .falling:
+        case .held, .flying:
             return mode
         }
     }
 
     /// Hides him while a full-screen video or game covers his screen (not editors, terminals, ...).
     @objc private func checkFullscreen() {
-        let hide = !isHeld && !isFalling && FullscreenDetector.isFullscreenVideoOrGame(on: screen)
+        let hide = !isHeld && !isFlying && FullscreenDetector.isFullscreenVideoOrGame(on: screen)
         guard hide != hiddenForFullscreen else { return }
         hiddenForFullscreen = hide
         if hide {

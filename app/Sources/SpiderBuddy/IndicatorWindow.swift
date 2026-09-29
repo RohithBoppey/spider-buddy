@@ -36,10 +36,12 @@ final class IndicatorWindow: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    /// Centres the dot horizontally on `x`, touching the top or bottom edge of `screen`.
-    func show(x: CGFloat, atTop: Bool, on screen: NSScreen) {
-        let y = atTop ? screen.frame.maxY - Self.diameter : screen.frame.minY
-        setFrameOrigin(NSPoint(x: (x - Self.diameter / 2).rounded(), y: y))
+    /// Shows the dot at `point` on an edge of `screen`, nudged inside so it touches that edge.
+    func show(at point: NSPoint, on screen: NSScreen) {
+        let f = screen.frame, r = Self.diameter / 2
+        let x = min(max(point.x, f.minX + r), f.maxX - r)
+        let y = min(max(point.y, f.minY + r), f.maxY - r)
+        setFrameOrigin(NSPoint(x: (x - r).rounded(), y: (y - r).rounded()))
         orderFrontRegardless()
     }
 
