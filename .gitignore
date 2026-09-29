@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Swift build output (recreated by app/build.sh)
+app/.build/
+app/build/
+app/.swiftpm/
+
+# Python
+__pycache__/
+*.pyc
+
+# scratch folder
+temp/

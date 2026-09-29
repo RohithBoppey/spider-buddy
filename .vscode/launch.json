@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:spider-buddy}/app",
+            "name": "Debug SpiderBuddy (app)",
+            "target": "SpiderBuddy",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug SpiderBuddy (app)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:spider-buddy}/app",
+            "name": "Release SpiderBuddy (app)",
+            "target": "SpiderBuddy",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release SpiderBuddy (app)"
+        }
+    ]
+}
