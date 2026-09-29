@@ -1,18 +1,24 @@
 import CoreGraphics
 
 /// Top edge: hanging upside down on a web from the screen's physical top, below the menu bar.
-/// Settles, slides down the web, then idles with random head tilts and sways.
+/// Settles, slides down the web, then idles: random head tilts and sways, and every so often
+/// climbs a little way up the web or slides a little way down it (yo-yo).
 struct TopHang {
     static let anchorX = 25          // web anchor column in top-hang frames (draw_hang.py ANCHOR)
     // Web length below the menu bar, in sprite pixels (1 sprite pixel = `scale` points on screen).
     static let webStart = 4          // before a drop
     static let webTarget = 30        // after it: his resting height. Tune this, then rebuild.
+    // Yo-yo on the web. Tune these, then rebuild.
+    static let yoyoChance = 0.4                  // when an idle stretch ends; otherwise a tilt/sway
+    static let yoyoDistances: ClosedRange<Int> = 4...12   // sprite pixels per move
+    static let yoyoRange = 12                    // stays within webTarget ± this
 
     enum Phase {
         case settle(ticks: Int)
         case drop
         case idle(ticks: Int)
         case accent(frame: Int, ticks: Int)   // hang_02..04: head tilts, sway
+        case yoyo(target: Int, ticks: Int)    // moving 1 px per tick toward a new web length
     }
 
     var x: CGFloat                   // screen x (points) of the web
@@ -31,6 +37,9 @@ struct TopHang {
         case .settle, .idle: return 0
         case .drop: return 1
         case .accent(let frame, _): return frame
+        case .yoyo(let target, let ticks):
+            // sliding down: loose grip; climbing up: alternate grips, hand over hand
+            return target > webLength ? 1 : (ticks / 2) % 2
         }
     }
 
@@ -42,10 +51,28 @@ struct TopHang {
             webLength = min(webLength + 2, Self.webTarget)
             if webLength == Self.webTarget { phase = Self.randomIdle() }
         case .idle(let n):
-            phase = n > 1 ? .idle(ticks: n - 1) : .accent(frame: Int.random(in: 2...4), ticks: 6)
+            if n > 1 {
+                phase = .idle(ticks: n - 1)
+            } else if Double.random(in: 0..<1) < Self.yoyoChance {
+                phase = .yoyo(target: yoyoTarget(), ticks: 0)
+            } else {
+                phase = .accent(frame: Int.random(in: 2...4), ticks: 6)
+            }
         case .accent(let frame, let n):
             phase = n > 1 ? .accent(frame: frame, ticks: n - 1) : Self.randomIdle()
+        case .yoyo(let target, let ticks):
+            webLength += target > webLength ? 1 : -1
+            phase = webLength == target ? Self.randomIdle() : .yoyo(target: target, ticks: ticks + 1)
         }
+    }
+
+    /// A new web length a few pixels up or down, kept near the resting height.
+    private func yoyoTarget() -> Int {
+        let low = Self.webTarget - Self.yoyoRange, high = Self.webTarget + Self.yoyoRange
+        let distance = Int.random(in: Self.yoyoDistances)
+        let up = webLength - distance, down = webLength + distance
+        let options = [up, down].filter { (low...high).contains($0) }
+        return options.randomElement() ?? Self.webTarget
     }
 
     private static func randomIdle() -> Phase {
