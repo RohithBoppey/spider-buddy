@@ -9,6 +9,8 @@ final class SpriteView: NSView {
 
     let scale: CGFloat
     var onMouseDown: (() -> Void)?
+    var onMouseDragged: (() -> Void)?
+    var onMouseUp: (() -> Void)?
 
     private let spriteLayer = CALayer()
     private let webLayer = CALayer()
@@ -61,5 +63,13 @@ final class SpriteView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         onMouseDown?()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onMouseDragged?()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        onMouseUp?()
     }
 }
