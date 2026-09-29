@@ -10,14 +10,17 @@ final class Sprite {
     /// Point that stays fixed while an animation plays (sprite pixels from the top-left),
     /// from the folder's anchors.json; nil when the folder has none.
     let anchor: CGPoint?
+    /// Centre of the eyes (sprite pixels from the top-left): where speech bubbles point.
+    let face: CGPoint?
     private let alpha: [UInt8]
 
-    private init(name: String, image: CGImage, anchor: CGPoint?, alpha: [UInt8]) {
+    private init(name: String, image: CGImage, anchor: CGPoint?, face: CGPoint?, alpha: [UInt8]) {
         self.name = name
         self.image = image
         width = image.width
         height = image.height
         self.anchor = anchor
+        self.face = face
         self.alpha = alpha
     }
 
@@ -26,7 +29,8 @@ final class Sprite {
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
               let rgba = Self.rgba(of: image, flipX: false, flipY: false) else { return nil }
         let alpha = stride(from: 3, to: rgba.count, by: 4).map { rgba[$0] }
-        self.init(name: url.deletingPathExtension().lastPathComponent, image: image, anchor: anchor, alpha: alpha)
+        self.init(name: url.deletingPathExtension().lastPathComponent, image: image, anchor: anchor,
+                  face: Self.eyeCentre(rgba, width: image.width, height: image.height), alpha: alpha)
     }
 
     /// Horizontally flipped copy (all frames face one way; the other way is mirrored at load).
@@ -49,16 +53,41 @@ final class Sprite {
                 provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
         else { return self }
         let alpha = stride(from: 3, to: rgba.count, by: 4).map { rgba[$0] }
-        let flippedAnchor = anchor.map {
-            CGPoint(x: flipX ? CGFloat(width) - $0.x : $0.x, y: flipY ? CGFloat(height) - $0.y : $0.y)
+        func flip(_ p: CGPoint) -> CGPoint {
+            CGPoint(x: flipX ? CGFloat(width) - p.x : p.x, y: flipY ? CGFloat(height) - p.y : p.y)
         }
-        return Sprite(name: name, image: flipped, anchor: flippedAnchor, alpha: alpha)
+        return Sprite(name: name, image: flipped, anchor: anchor.map(flip), face: face.map(flip), alpha: alpha)
     }
 
     /// x, y in sprite pixels, y measured from the top.
     func isOpaque(x: Int, y: Int) -> Bool {
         guard x >= 0, y >= 0, x < width, y < height else { return false }
         return alpha[y * width + x] > 0
+    }
+
+    /// Centroid of the eye pixels: eye white #D6DED6 plus shade #A5A5A5, or #DEDEDE plus shade for
+    /// frames drawn with that white (018, 087). #DEDEDE alone is not used where #D6DED6 exists
+    /// because the hanging frames' web stub is #DEDEDE.
+    private static func eyeCentre(_ rgba: [UInt8], width: Int, height: Int) -> CGPoint? {
+        func pixels(_ whites: [(UInt8, UInt8, UInt8)]) -> [CGPoint] {
+            let colours = whites + [(0xA5, 0xA5, 0xA5)]
+            var points: [CGPoint] = []
+            for y in 0..<height {
+                for x in 0..<width {
+                    let i = (y * width + x) * 4
+                    guard rgba[i + 3] == 255 else { continue }
+                    if colours.contains(where: { $0 == (rgba[i], rgba[i + 1], rgba[i + 2]) }) {
+                        points.append(CGPoint(x: CGFloat(x) + 0.5, y: CGFloat(y) + 0.5))
+                    }
+                }
+            }
+            return points
+        }
+        var eye = pixels([(0xD6, 0xDE, 0xD6)])
+        if eye.count < 3 { eye = pixels([(0xD6, 0xDE, 0xD6), (0xDE, 0xDE, 0xDE)]) }
+        guard !eye.isEmpty else { return nil }
+        let n = CGFloat(eye.count)
+        return CGPoint(x: eye.map(\.x).reduce(0, +) / n, y: eye.map(\.y).reduce(0, +) / n)
     }
 
     /// Premultiplied RGBA bytes, rows top to bottom.

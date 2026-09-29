@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds build/SpiderBuddy.app: compiles the Swift package, then bundles the binary,
-# Info.plist and the sprite folders from ../frames-custom (preview/source files skipped).
+# Info.plist, Resources/ and the sprite folders from ../frames-custom (preview/source files skipped).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -11,6 +11,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Sprites"
 cp .build/release/SpiderBuddy "$APP/Contents/MacOS/"
 cp Info.plist "$APP/Contents/"
+cp Resources/* "$APP/Contents/Resources/"   # speech lines, pixel font and its licence
 
 for dir in ../frames-custom/*/; do
     name=$(basename "$dir")

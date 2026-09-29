@@ -1,0 +1,32 @@
+# One line per bubble. Lines starting with # are ignored. Rebuild after editing.
+# The pixel font has no emoji, so keep lines to plain text.
+
+# Wellness nudges
+Drink some water!
+Time to stretch.
+Sit up straight, citizen!
+20-20-20: look 20 ft away for 20 seconds.
+Blink. Your eyes will thank you.
+Deep breath. You've got this.
+Snack break?
+Stand up for a minute.
+
+# Spidey / Peter Parker
+My spider-sense says: take a break.
+Just your friendly neighborhood reminder...
+Hanging around. Literally.
+Rent's due, Aunt May's calling...
+With great power comes great responsibility.
+Webs holding. Code? Less sure.
+Pizza time!
+Is that a bug? I'll web it.
+
+# Marvel geek
+I can do this all day.
+Avengers... assemble (after this commit).
+I'm with you 'til the end of the line.
+Snap out of it!
+I am Groot.
+Wakanda forever!
+Hulk smash... bugs.
+Excelsior!

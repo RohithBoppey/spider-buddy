@@ -8,10 +8,14 @@ final class PetController {
     private let dragThreshold: CGFloat = 4   // points the cursor must move before a click becomes a drag
     private let gravity: CGFloat = 2500      // points/s², for the fall to the bottom edge
     private let zipSeconds: TimeInterval = 0.25   // sideways zip onto a wall
+    // Speech bubbles. Tune these, then rebuild.
+    private let bubbleEvery: ClosedRange<Int> = 300...600   // ticks (0.1 s) between lines: 30-60 s
+    private let bubbleShowTicks = 50                        // 5 s on screen
 
     private let window = PetWindow()
     private let view: SpriteView
     private let indicator = IndicatorWindow()
+    private let bubble = SpeechBubble()
 
     private enum Edge { case top, bottom, left, right }
 
@@ -43,6 +47,9 @@ final class PetController {
     private var lastActiveID: CGDirectDisplayID?   // display with keyboard focus at the last check
     private var hiddenForFullscreen = false
     private var mouseDownAt: NSPoint?         // set while the button is held on him
+    private var shown: (sprite: Sprite, origin: NSPoint)?   // what is on screen now, for the face
+    private lazy var ticksToBubble = Int.random(in: bubbleEvery)
+    private var bubbleTicksLeft = 0           // > 0 while a bubble is showing
 
     init?(library: SpriteLibrary) {
         let hang = library.frames("top-hang")
@@ -104,8 +111,12 @@ final class PetController {
 
     @objc private func tick() {
         followActiveScreen()
-        mode = advanced(mode)
+        // on the bottom and walls he stays put while he is talking; on the web he carries on
+        if !(bubbleTicksLeft > 0 && isOnBottomOrWall) {
+            mode = advanced(mode)
+        }
         render()
+        updateBubble()
     }
 
     private func advanced(_ mode: Mode) -> Mode {
@@ -209,6 +220,7 @@ final class PetController {
         let size = size ?? view.size(for: sprite, webHeight: 0)
         window.setFrame(NSRect(origin: origin, size: size), display: false)
         view.show(sprite, webHeight: webHeight, anchorX: anchorX)
+        shown = (sprite, origin)
     }
 
     private func heldFrame(for sprite: Sprite, at mouse: NSPoint) -> NSRect {
@@ -232,6 +244,7 @@ final class PetController {
     private func mouseDown() {
         guard !isFlying else { return }
         mouseDownAt = NSEvent.mouseLocation
+        hideBubble()
     }
 
     private func mouseDragged() {
@@ -308,6 +321,8 @@ final class PetController {
     private func fly(_ sprite: Sprite, to end: NSRect, seconds: TimeInterval,
                      easing: CAMediaTimingFunctionName, landed: @escaping () -> Void) {
         mode = .flying
+        shown = nil
+        hideBubble()
         view.show(sprite, webHeight: 0, anchorX: 0)
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = seconds
@@ -425,10 +440,71 @@ final class PetController {
         hiddenForFullscreen = hide
         if hide {
             window.orderOut(nil)
+            hideBubble()
         } else {
             render()
             window.orderFrontRegardless()
         }
+    }
+
+    // MARK: - Speech bubbles
+
+    private var isOnBottomOrWall: Bool {
+        switch mode {
+        case .bottom, .wall: return true
+        default: return false
+        }
+    }
+
+    /// Top edge: anytime he is on the web. Bottom and walls: only while stationary.
+    private var canSpeak: Bool {
+        switch mode {
+        case .top: return true
+        case .bottom(let bottom): if case .rest = bottom.phase { return true }
+        case .wall(let wall): if case .ready = wall.phase { return true }
+        default: break
+        }
+        return false
+    }
+
+    /// Which side of his face the bubble goes: away from walls, above him on the bottom edge.
+    private var bubbleSide: SpeechBubble.Side {
+        switch mode {
+        case .bottom: return .above
+        case .wall(let wall): return wall.onRight ? .left : .right
+        default: return .right
+        }
+    }
+
+    private func updateBubble() {
+        guard !hiddenForFullscreen else { return }
+        if bubbleTicksLeft > 0 {
+            if bubbleTicksLeft == 1 {
+                hideBubble()
+            } else {
+                bubbleTicksLeft -= 1
+                positionBubble()   // follows him on the web
+            }
+            return
+        }
+        if ticksToBubble > 0 { ticksToBubble -= 1 }
+        guard ticksToBubble == 0, canSpeak else { return }   // when due, waits for him to be stationary
+        bubble.text = SpeechLines.all.randomElement() ?? "Hey!"
+        bubbleTicksLeft = bubbleShowTicks
+        positionBubble()
+    }
+
+    private func positionBubble() {
+        guard let (sprite, origin) = shown, let face = sprite.face else { return }
+        let point = NSPoint(x: origin.x + face.x * scale, y: origin.y + (CGFloat(sprite.height) - face.y) * scale)
+        bubble.show(pointingAt: point, side: bubbleSide, within: screen.visibleFrame)
+    }
+
+    private func hideBubble() {
+        guard bubbleTicksLeft > 0 else { return }
+        bubbleTicksLeft = 0
+        ticksToBubble = Int.random(in: bubbleEvery)
+        bubble.hide()
     }
 
     // MARK: - Clicks

@@ -26,6 +26,8 @@ quit it first (or `pkill -x SpiderBuddy`).
 | `frames-custom/top-hang/draw_hang.py` | Generates the hanging frames (`hang_00`–`hang_04`) and their previews. |
 | `frames-custom/bottom-crawl/prepare_crawl.py` | Splits frame 095, writes `anchors.json` (head-fixed alignment) and `_preview.gif`. |
 | `frames-custom/wall-crawl/prepare_wall.py` | Builds the wall ready frame (018 with feet planted), writes wall `anchors.json` and `_preview.gif`. |
+| `app/Resources/lines.txt` | What he says in speech bubbles, one line each (`#` = comment). Rebuild after editing. |
+| `app/Resources/PressStart2P-*` | Pixel font for the bubbles and its SIL Open Font License. |
 | `sprites-raw/` | Source sprite sheet and pose reference. |
 
 ## Regenerate the hanging frames
