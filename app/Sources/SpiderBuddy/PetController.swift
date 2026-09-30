@@ -4,12 +4,12 @@ import AppKit
 /// bottom edge, cling to and climb the left/right walls, dangle while dragged, fall or zip to
 /// an edge when dropped. Also follows the active display and hides over full-screen videos and games.
 final class PetController {
-    private let scale: CGFloat = 2
+    private var scale = Settings.shared.size.scale
     private let dragThreshold: CGFloat = 4   // points the cursor must move before a click becomes a drag
     private let gravity: CGFloat = 2500      // points/s², for the fall to the bottom edge
     private let zipSeconds: TimeInterval = 0.25   // sideways zip onto a wall
     // Speech bubbles. Tune these, then rebuild.
-    private let bubbleEvery: ClosedRange<Int> = 300...600   // ticks (0.1 s) between lines: 30-60 s
+    private var bubbleEvery: ClosedRange<Int> { Settings.shared.bubbleFrequency.ticks }   // Settings > Speech
     private let bubbleShowTicks = 50                        // 5 s on screen
 
     private let window = PetWindow()
@@ -17,7 +17,7 @@ final class PetController {
     private let indicator = IndicatorWindow()
     private let bubble = SpeechBubble()
 
-    private enum Edge { case top, bottom, left, right }
+    enum Edge { case top, bottom, left, right }
 
     /// A wall frame set for one wall and one climbing direction.
     private struct WallKey: Hashable {
@@ -46,6 +46,8 @@ final class PetController {
     private var screen: NSScreen              // screen he is on
     private var lastActiveID: CGDirectDisplayID?   // display with keyboard focus at the last check
     private var hiddenForFullscreen = false
+    private(set) var isPaused = false         // menu: Pause
+    private(set) var isHiddenByUser = false   // menu: Hide Spider Buddy
     private var mouseDownAt: NSPoint?         // set while the button is held on him
     private var shown: (sprite: Sprite, origin: NSPoint)?   // what is on screen now, for the face
     private lazy var ticksToBubble = Int.random(in: bubbleEvery)
@@ -102,6 +104,8 @@ final class PetController {
         schedule(every: 0.5, #selector(checkFullscreen))
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged),
+                                               name: UserDefaults.didChangeNotification, object: nil)
     }
 
     /// A display was connected, disconnected or rearranged: if his screen is gone, move him
@@ -126,12 +130,75 @@ final class PetController {
 
     @objc private func tick() {
         followActiveScreen()
-        // on the bottom and walls he stays put while he is talking; on the web he carries on
-        if !(bubbleTicksLeft > 0 && isOnBottomOrWall) {
+        // on the bottom and walls he stays put while he is talking; on the web he carries on.
+        // Paused: frozen in place (but still draggable).
+        if (!isPaused || isHeld) && !(bubbleTicksLeft > 0 && isOnBottomOrWall) {
             mode = advanced(mode)
         }
         render()
         updateBubble()
+    }
+
+    // MARK: - Menu actions
+
+    func setPaused(_ paused: Bool) {
+        isPaused = paused
+        if paused { hideBubble() }
+    }
+
+    func setHidden(_ hidden: Bool) {
+        isHiddenByUser = hidden
+        if hidden {
+            window.orderOut(nil)
+            indicator.hide()
+            hideBubble()
+        } else if !hiddenForFullscreen {
+            render()
+            window.orderFrontRegardless()
+        }
+    }
+
+    /// Call after Settings.bubblesEnabled changes.
+    func bubblesSettingChanged() {
+        if !Settings.shared.bubblesEnabled { hideBubble() }
+    }
+
+    /// Applies Settings window changes live (any UserDefaults write lands here, so it is idempotent).
+    @objc private func settingsChanged() {
+        bubblesSettingChanged()
+        let newScale = Settings.shared.size.scale
+        if newScale != scale {
+            scale = newScale
+            view.scale = newScale
+            // re-clamp to the new edge limits on the same screen
+            if !isHeld && !isFlying { mode = relocated(mode, from: screen, to: screen) }
+        }
+        if case .top(var top) = mode {
+            top.settleAtRestingHeight()
+            mode = .top(top)
+        }
+        if ticksToBubble > bubbleEvery.upperBound { ticksToBubble = Int.random(in: bubbleEvery) }
+        render()
+        if bubbleTicksLeft > 0 { positionBubble() }   // new font or size
+    }
+
+    /// Moves him to the middle of an edge of his screen, landing as if dropped there.
+    func send(to edge: Edge) {
+        guard !isHeld, !isFlying else { return }
+        hideBubble()
+        let f = screen.frame
+        let from = NSPoint(x: f.midX, y: f.midY + 80)
+        switch edge {
+        case .top:
+            mode = .top(TopHang(x: clampedHangX(f.midX, on: screen), settleTicks: 3))
+            render()
+        case .bottom:
+            fall(to: clampedCrawlX(f.midX, on: screen), from: from)
+        case .left:
+            zip(toRightWall: false, from: from)
+        case .right:
+            zip(toRightWall: true, from: from)
+        }
     }
 
     private func advanced(_ mode: Mode) -> Mode {
@@ -155,7 +222,7 @@ final class PetController {
     }
 
     private func render() {
-        guard !hiddenForFullscreen else { return }
+        guard !hiddenForFullscreen, !isHiddenByUser else { return }
         switch mode {
         case .top(let top):
             layoutHanging(hang[top.frameIndex], anchorX: TopHang.anchorX, x: top.x, webLength: top.webLength)
@@ -415,7 +482,7 @@ final class PetController {
     /// Moves him only when the active display (keyboard focus) changes, keeping his edge and
     /// relative position; a screen you dropped him on keeps him until you focus another display.
     private func followActiveScreen() {
-        guard !isHeld, !isFlying, let active = NSScreen.main else { return }
+        guard Settings.shared.followActiveDisplay, !isHeld, !isFlying, let active = NSScreen.main else { return }
         guard active.displayID != lastActiveID else { return }
         lastActiveID = active.displayID
         guard active.displayID != screen.displayID else { return }
@@ -456,7 +523,7 @@ final class PetController {
         if hide {
             window.orderOut(nil)
             hideBubble()
-        } else {
+        } else if !isHiddenByUser {
             render()
             window.orderFrontRegardless()
         }
@@ -492,7 +559,7 @@ final class PetController {
     }
 
     private func updateBubble() {
-        guard !hiddenForFullscreen else { return }
+        guard !hiddenForFullscreen, !isHiddenByUser, !isPaused, Settings.shared.bubblesEnabled else { return }
         if bubbleTicksLeft > 0 {
             if bubbleTicksLeft == 1 {
                 hideBubble()

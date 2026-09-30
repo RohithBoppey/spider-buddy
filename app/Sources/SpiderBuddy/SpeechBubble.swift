@@ -21,7 +21,14 @@ final class SpeechBubble: NSPanel {
     enum Side { case left, right, above }
 
     // Tune these, then rebuild.
-    static let usePixelFont = true
+    static var usePixelFont: Bool { Settings.shared.bubbleFont == .pixel }
+
+    /// Makes the bundled pixel font available to this process (bubbles and the Settings preview).
+    static func registerFont() {
+        if let url = Bundle.main.url(forResource: "PressStart2P-Regular", withExtension: "ttf") {
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+    }
     static let gapBeside: CGFloat = 22   // points from the face to the tail tip, bubble beside the face
     static let gapAbove: CGFloat = 20    // ... bubble above the face
     static let maxTextWidth: CGFloat = 150
@@ -101,13 +108,10 @@ private final class BubbleView: NSView {
 
     override var isFlipped: Bool { true }
 
-    private static let font: NSFont = {
-        if SpeechBubble.usePixelFont, let url = Bundle.main.url(forResource: "PressStart2P-Regular", withExtension: "ttf") {
-            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
-            if let font = NSFont(name: "PressStart2P-Regular", size: 8) { return font }
-        }
+    private static var font: NSFont {
+        if SpeechBubble.usePixelFont, let font = NSFont(name: "PressStart2P-Regular", size: 8) { return font }
         return NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-    }()
+    }
 
     private var attributes: [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()

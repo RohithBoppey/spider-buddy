@@ -7,7 +7,7 @@ struct TopHang {
     static let anchorX = 25          // web anchor column in top-hang frames (draw_hang.py ANCHOR)
     // Web length below the menu bar, in sprite pixels (1 sprite pixel = `scale` points on screen).
     static let webStart = 4          // before a drop
-    static let webTarget = 30        // after it: his resting height. Tune this, then rebuild.
+    static var webTarget: Int { Settings.shared.webLength.pixels }   // after it: his resting height
     // Yo-yo on the web. Tune these, then rebuild.
     static let yoyoChance = 0.4                  // when an idle stretch ends; otherwise a tilt/sway
     static let yoyoDistances: ClosedRange<Int> = 4...12   // sprite pixels per move
@@ -75,7 +75,18 @@ struct TopHang {
         return options.randomElement() ?? Self.webTarget
     }
 
+    /// Moves to a new resting height (Settings > Web length changed) by sliding along the web.
+    mutating func settleAtRestingHeight() {
+        switch phase {
+        case .idle, .accent, .yoyo:
+            if webLength != Self.webTarget { phase = .yoyo(target: Self.webTarget, ticks: 0) }
+        case .settle, .drop:
+            break   // the drop already ends at the resting height
+        }
+    }
+
     private static func randomIdle() -> Phase {
-        .idle(ticks: Int.random(in: 20...60))   // 2-6 s at 10 fps
+        // 2-6 s at 10 fps, scaled by Settings > Energy
+        .idle(ticks: max(1, Int(Double(Int.random(in: 20...60)) * Settings.shared.energy.pause)))
     }
 }

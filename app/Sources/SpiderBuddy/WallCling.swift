@@ -19,10 +19,10 @@ struct WallCling {
 
     let onRight: Bool                // which wall
     var y: CGFloat                   // screen y (points) of the eye anchor
-    var phase: Phase = .ready(ticks: Int.random(in: WallCling.readyTicks))
+    var phase: Phase = .ready(ticks: WallCling.randomReadyTicks())
     var goingUp = true               // climbing direction; also whether he is head-up
     var cycleIndex = 0
-    private var speed = CGFloat.random(in: WallCling.speeds)
+    private var speed = WallCling.randomSpeed()
     private var remaining: CGFloat = 0
     private var travelled: CGFloat = 0
     private let transitionCount: Int
@@ -49,13 +49,22 @@ struct WallCling {
         case .climb:
             climb(bounds: bounds)
         case .outOf(let step):
-            phase = step > 0 ? .outOf(step: step - 1) : .ready(ticks: Int.random(in: Self.readyTicks))
+            phase = step > 0 ? .outOf(step: step - 1) : .ready(ticks: Self.randomReadyTicks())
         }
+    }
+
+    // Settings > Energy scales speed and rests.
+    private static func randomSpeed() -> CGFloat {
+        CGFloat.random(in: speeds) * Settings.shared.energy.speed
+    }
+
+    private static func randomReadyTicks() -> Int {
+        max(1, Int(Double(Int.random(in: readyTicks)) * Settings.shared.energy.pause))
     }
 
     private mutating func startClimb(bounds: ClosedRange<CGFloat>) {
         remaining = CGFloat.random(in: Self.climbDistances)
-        speed = CGFloat.random(in: Self.speeds)
+        speed = Self.randomSpeed()
         // random direction, unless there isn't room that way
         let roomUp = bounds.upperBound - y, roomDown = y - bounds.lowerBound
         goingUp = roomUp < 20 ? false : roomDown < 20 ? true : Bool.random()

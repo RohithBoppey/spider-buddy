@@ -24,7 +24,7 @@ struct BottomCrawl {
     var phase: Phase = .landing(ticks: 5)
     var cycleIndex = 0               // position in the crawl cycle
     var lift: CGFloat = 0            // jitter: points above the ground for this frame
-    private var speed = CGFloat.random(in: BottomCrawl.speeds)
+    private var speed = BottomCrawl.randomSpeed()
     private var remaining = CGFloat.random(in: BottomCrawl.burstDistances)
     private var travelled: CGFloat = 0
     private let cycleCount: Int
@@ -55,9 +55,18 @@ struct BottomCrawl {
         }
     }
 
+    // Settings > Energy scales speed and pauses.
+    private static func randomSpeed() -> CGFloat {
+        CGFloat.random(in: speeds) * Settings.shared.energy.speed
+    }
+
+    private static func scaledPause(_ ticks: Int) -> Int {
+        max(1, Int(Double(ticks) * Settings.shared.energy.pause))
+    }
+
     private mutating func startBurst() {
         if Double.random(in: 0..<1) < Self.turnChance { facingRight.toggle() }
-        speed = CGFloat.random(in: Self.speeds)
+        speed = Self.randomSpeed()
         remaining = CGFloat.random(in: Self.burstDistances)
         phase = .crawl
     }
@@ -81,7 +90,7 @@ struct BottomCrawl {
 
         if remaining <= 0 {
             let long = Double.random(in: 0..<1) < Self.longPauseChance
-            phase = .rest(ticks: Int.random(in: long ? Self.longPauses : Self.shortPauses))
+            phase = .rest(ticks: Self.scaledPause(Int.random(in: long ? Self.longPauses : Self.shortPauses)))
             lift = 0
         }
     }

@@ -7,7 +7,7 @@ import QuartzCore
 final class SpriteView: NSView {
     static let webColor = CGColor(red: 0xDE / 255, green: 0xDE / 255, blue: 0xDE / 255, alpha: 1)
 
-    let scale: CGFloat
+    var scale: CGFloat
     var onMouseDown: (() -> Void)?
     var onMouseDragged: (() -> Void)?
     var onMouseUp: (() -> Void)?
