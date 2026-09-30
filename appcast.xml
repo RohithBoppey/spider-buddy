@@ -5,5 +5,14 @@
   <channel>
     <title>Spider Buddy</title>
     <language>en</language>
+    <item>
+      <title>Version 1.0.0</title>
+      <pubDate>Wed, 30 Sep 2026 06:50:33 GMT</pubDate>
+      <sparkle:version>1.0.0</sparkle:version>
+      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<p>initial release</p>]]></description>
+      <enclosure url="https://github.com/RohithBoppey/spider-buddy/releases/download/v1.0.0/SpiderBuddy-1.0.0.dmg" type="application/octet-stream" sparkle:edSignature="80lb8KTowrBItjaJxYbEHri2zfpzjN5t9Nc4/qYAKI3K1lmN+G2ji8OQtPdaW9zTc0mghmsmwF8B0QGexFcOAQ==" length="2228244" />
+    </item>
   </channel>
 </rss>
