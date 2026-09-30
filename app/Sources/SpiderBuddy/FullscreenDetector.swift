@@ -29,8 +29,10 @@ enum FullscreenDetector {
         // CG window bounds use a top-left origin on the primary display; NSScreen uses bottom-left
         let f = screen.frame
         let target = CGRect(x: f.minX, y: primary.frame.maxY - f.maxY, width: f.width, height: f.height)
-        // on a notched display, full-screen windows stop below the notch
-        let notch = screen.safeAreaInsets.top
+        // on a notched display, full-screen windows start below the menu bar, which is taller
+        // than the notch inset (MacBook: 37 pt vs a 32 pt safe-area inset)
+        let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
+        let topAllowance = max(screen.safeAreaInsets.top, menuBar)
 
         for info in list {
             guard (info[kCGWindowLayer as String] as? Int) == 0,                 // normal app windows
@@ -38,7 +40,7 @@ enum FullscreenDetector {
                   let boundsDict = info[kCGWindowBounds as String] as? NSDictionary,
                   let b = CGRect(dictionaryRepresentation: boundsDict) else { continue }
             let coversScreen = abs(b.minX - target.minX) < 1 && abs(b.width - target.width) < 1
-                && abs(b.maxY - target.maxY) < 1 && b.height >= target.height - notch - 1
+                && abs(b.maxY - target.maxY) < 1 && b.height >= target.height - topAllowance - 1
             if coversScreen && hidesPet(pid) {
                 return true
             }

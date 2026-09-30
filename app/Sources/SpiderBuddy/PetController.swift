@@ -100,6 +100,21 @@ final class PetController {
         schedule(every: 0.1, #selector(tick))
         schedule(every: 1.0 / 30, #selector(updateMousePassthrough))
         schedule(every: 0.5, #selector(checkFullscreen))
+        NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
+                                               name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+
+    /// A display was connected, disconnected or rearranged: if his screen is gone, move him
+    /// to the active one, keeping his edge and relative position.
+    @objc private func screensChanged() {
+        guard !NSScreen.screens.contains(where: { $0.displayID == screen.displayID }) else { return }
+        let old = screen
+        screen = NSScreen.main ?? NSScreen.screens[0]
+        lastActiveID = screen.displayID
+        if isHeld || isFlying { return }
+        mode = relocated(mode, from: old, to: screen)
+        hideBubble()
+        render()
     }
 
     private func schedule(every interval: TimeInterval, _ selector: Selector) {
