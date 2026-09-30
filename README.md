@@ -13,6 +13,13 @@ cd app
 open build/SpiderBuddy.app    # quit from the 🕷️ menu-bar icon
 ```
 
+To make an installable disk image (app + Applications shortcut):
+
+```sh
+cd app
+./package.sh                  # builds, then writes app/dist/SpiderBuddy-<version>.dmg
+```
+
 Rebuild after changing Swift code or anything in `frames-custom/`. If an old copy is running,
 quit it first (or `pkill -x SpiderBuddy`).
 

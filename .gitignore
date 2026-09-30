@@ -12,3 +12,6 @@ __pycache__/
 
 # scratch folder
 temp/
+
+# packaged releases (recreated by app/package.sh)
+app/dist/
