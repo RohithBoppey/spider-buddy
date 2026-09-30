@@ -18,7 +18,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "🕷️"
+        // Spidey's eyes as a template image: macOS tints it for light and dark menu bars
+        if let icon = NSImage(named: "MenuBarIcon") {
+            icon.isTemplate = true
+            icon.accessibilityDescription = "Spider Buddy"
+            statusItem.button?.image = icon
+        } else {
+            statusItem.button?.title = "🕷️"
+        }
         let menu = NSMenu()
         let title = NSMenuItem(title: "Spider Buddy", action: nil, keyEquivalent: "")
         title.isEnabled = false
