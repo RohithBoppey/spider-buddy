@@ -15,3 +15,5 @@ temp/
 
 # packaged releases (recreated by app/package.sh)
 app/dist/
+# Sparkle command-line tools (downloaded by scripts)
+app/.tools/

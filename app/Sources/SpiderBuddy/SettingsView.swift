@@ -12,7 +12,7 @@ struct SettingsView: View {
                 .tabItem { Label("Speech", systemImage: "text.bubble") }
         }
         // grouped Forms scroll, so they report no height of their own: size the window explicitly
-        .frame(width: 480, height: 400)
+        .frame(width: 480, height: 470)
         .padding(.vertical, 8)
     }
 }
@@ -22,6 +22,8 @@ private struct GeneralSettings: View {
     @AppStorage(SettingsKey.energy) private var energy = Energy.normal
     @AppStorage(SettingsKey.webLength) private var webLength = WebLength.medium
     @AppStorage(SettingsKey.followActiveDisplay) private var followActiveDisplay = true
+    @State private var autoUpdate = Updater.shared.automaticallyChecks
+    private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
 
     var body: some View {
         Form {
@@ -45,6 +47,15 @@ private struct GeneralSettings: View {
                     Text("Stay on the display I leave him on").tag(false)
                 }
                 .pickerStyle(.radioGroup)
+            }
+            Section("Updates") {
+                Toggle("Check for updates automatically", isOn: $autoUpdate)
+                    .onChange(of: autoUpdate) { Updater.shared.automaticallyChecks = $0 }
+                HStack {
+                    Text("Version \(version)").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Check Now") { Updater.shared.checkForUpdates(nil) }
+                }
             }
         }
         .formStyle(.grouped)

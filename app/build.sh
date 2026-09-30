@@ -12,6 +12,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Sprites"
 cp .build/release/SpiderBuddy "$APP/Contents/MacOS/"
 cp Info.plist "$APP/Contents/"
 cp Resources/* "$APP/Contents/Resources/"   # speech lines, pixel font and its licence
+mkdir -p "$APP/Contents/Frameworks"
+ditto .build/release/Sparkle.framework "$APP/Contents/Frameworks/Sparkle.framework"   # in-app updates
 
 for dir in ../frames-custom/*/; do
     name=$(basename "$dir")
@@ -19,6 +21,7 @@ for dir in ../frames-custom/*/; do
     find "$dir" -maxdepth 1 \( -name '*.png' -o -name 'anchors.json' \) ! -name '_*' -exec cp {} "$APP/Contents/Resources/Sprites/$name/" \;
 done
 
-# ad-hoc signature: enough for running locally
+# ad-hoc signature (no Apple Developer ID). Sparkle's helpers are signed first, then the app.
+codesign --force --deep --sign - "$APP/Contents/Frameworks/Sparkle.framework"
 codesign --force --sign - "$APP"
 echo "Built $(pwd)/$APP"

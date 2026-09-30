@@ -20,6 +20,22 @@ cd app
 ./package.sh                  # builds, then writes app/dist/SpiderBuddy-<version>.dmg
 ```
 
+## Releasing an update
+
+Installed copies update themselves through [Sparkle](https://sparkle-project.org): they read
+`appcast.xml` (this repo) and download the `.dmg` from GitHub Releases.
+
+```sh
+cd app
+./release.sh 1.1.0 "What's new"   # sets the version, builds, packages, signs, adds it to appcast.xml
+```
+
+Then run the two commands it prints: `gh release create …` first (uploads the .dmg), then commit and
+push `appcast.xml` (announces it). The update signing key lives in your login Keychain
+(account `spider-buddy`); back it up with
+`app/.tools/sparkle/bin/generate_keys --account spider-buddy -x <file>`. Without it,
+installed copies can never be updated again.
+
 Rebuild after changing Swift code or anything in `frames-custom/`. If an old copy is running,
 quit it first (or `pkill -x SpiderBuddy`).
 

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sparkle update feed. Installed copies read this (SUFeedURL in app/Info.plist) to find
+     new versions. app/release.sh adds an <item> per release; newest first. -->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Spider Buddy</title>
+    <language>en</language>
+  </channel>
+</rss>

@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         self.pet = pet
         SpeechBubble.registerFont()
+        _ = Updater.shared            // starts automatic update checks
         setUpStatusItem()
         pet.start()
     }
@@ -59,6 +60,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         menu.addItem(item("Settings…", #selector(showSettings), key: ","))
+        let updates = NSMenuItem(title: "Check for Updates…", action: #selector(Updater.checkForUpdates(_:)),
+                                 keyEquivalent: "")
+        updates.target = Updater.shared
+        menu.addItem(updates)
         menu.addItem(item("About Spider Buddy", #selector(showAbout)))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Spider Buddy", action: #selector(NSApplication.terminate(_:)),

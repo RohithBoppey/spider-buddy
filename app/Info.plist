@@ -23,5 +23,15 @@
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <!-- Sparkle updates: feed (update list), the public half of the update signing key,
+         and a daily automatic check -->
+    <key>SUFeedURL</key>
+    <string>https://raw.githubusercontent.com/RohithBoppey/spider-buddy/main/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>H4Hbvj0ZceJWlx/ICS5cFEXCwnHRE9Rk5kpGeaY/pok=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
 </dict>
 </plist>
