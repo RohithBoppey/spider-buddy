@@ -6,6 +6,15 @@
     <title>Spider Buddy</title>
     <language>en</language>
     <item>
+      <title>Version 1.1.0</title>
+      <pubDate>Sun, 04 Oct 2026 09:48:57 GMT</pubDate>
+      <sparkle:version>1.1.0</sparkle:version>
+      <sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<p>Right-click menu, sound effects, and steadier multi-display behaviour.</p>]]></description>
+      <enclosure url="https://github.com/RohithBoppey/spider-buddy/releases/download/v1.1.0/SpiderBuddy-1.1.0.dmg" type="application/octet-stream" sparkle:edSignature="WxN0wyp7J87IuYGndpuYjDGSeohvIXKiKArN4XHkPkxnbAMAqyALIpEoIR4GQl1pbuRM/CQv3/LJaZo39OXyDg==" length="2288839" />
+    </item>
+    <item>
       <title>Version 1.0.0</title>
       <pubDate>Wed, 30 Sep 2026 06:50:33 GMT</pubDate>
       <sparkle:version>1.0.0</sparkle:version>
