@@ -12,6 +12,8 @@ struct SettingsView: View {
                 .tabItem { Label("Speech", systemImage: "text.bubble") }
             SoundSettings()
                 .tabItem { Label("Sound", systemImage: "speaker.wave.2") }
+            TimerSettings()
+                .tabItem { Label("Timer", systemImage: "timer") }
         }
         // grouped Forms scroll, so they report no height of their own: size the window explicitly
         .frame(width: 480, height: 470)
@@ -128,14 +130,79 @@ private struct SoundSettings: View {
     }
 }
 
+private struct TimerSettings: View {
+    @AppStorage(SettingsKey.timerSize) private var size = TimerSize.normal
+    @AppStorage(SettingsKey.timerAlarm) private var alarm = true
+    @AppStorage(SettingsKey.timerNotify) private var notify = true
+    @State private var alarmPlaying = false
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Bubble size", selection: $size) {
+                    ForEach(TimerSize.allCases) { Text($0.title).tag($0) }
+                }
+                HStack {
+                    Spacer()
+                    BubblePreview(font: .pixel, text: "12:34", size: size.fontSize)
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            } footer: {
+                Text("Start a timer from the menu when you right-click him. \"Time's up!\" always shows at the largest size.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("When a timer ends") {
+                HStack {
+                    Toggle("Play alarm", isOn: $alarm)
+                    Spacer()
+                    Button {
+                        if alarmPlaying {
+                            SoundEffects.shared.stop(.timerDone)
+                        } else {
+                            SoundEffects.shared.play(.timerDone)
+                            // back to ▶︎ when the sound ends by itself
+                            DispatchQueue.main.asyncAfter(deadline: .now() + SoundEffects.shared.duration(.timerDone)) {
+                                alarmPlaying = false
+                            }
+                        }
+                        alarmPlaying.toggle()
+                    } label: { Image(systemName: alarmPlaying ? "stop.fill" : "play.fill") }
+                        .help(alarmPlaying ? "Stop" : "Play the alarm")
+                        .disabled(!alarm)
+                }
+                Text("Plays for 30 seconds or until you dismiss it, even when other sounds are off. Volume: Sound tab.")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Toggle("Show a notification", isOn: $notify)
+                    Spacer()
+                    Button("Notification Settings…") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .pickerStyle(.segmented)
+        .onDisappear {
+            SoundEffects.shared.stop(.timerDone)
+            alarmPlaying = false
+        }
+    }
+}
+
 /// A static look-alike of the in-app bubble, to compare fonts.
 private struct BubblePreview: View {
     let font: BubbleFont
+    var text = "Drink some water!"
+    var size: CGFloat = 8
     private let ink = Color(red: 0x21 / 255, green: 0x21 / 255, blue: 0x21 / 255)
 
     var body: some View {
-        Text("Drink some water!")
-            .font(font == .pixel ? .custom("PressStart2P-Regular", size: 8) : .system(size: 11, design: .monospaced))
+        Text(text)
+            .font(font == .pixel ? .custom("PressStart2P-Regular", size: size) : .system(size: size * 11 / 8, design: .monospaced))
             .foregroundStyle(ink)
             .padding(6)
             .background(Color.white)

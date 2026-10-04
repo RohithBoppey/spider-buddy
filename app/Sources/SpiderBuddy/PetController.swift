@@ -114,6 +114,7 @@ final class PetController {
         view.onMouseDragged = { [weak self] in self?.mouseDragged() }
         view.onMouseUp = { [weak self] in self?.mouseUp() }
         view.onRightClick = { [weak self] event in self?.rightClicked(event) }
+        Notifier.shared.onTimerFinishedClicked = { [weak self] in self?.dismissTimeUp() }
         window.contentView = view
     }
 
@@ -661,6 +662,7 @@ final class PetController {
     /// (only with no timer) a new random line when one is due.
     private func updateBubble() {
         if timer.checkFinished() {
+            Notifier.shared.timerFinished(description: timer.description ?? "")
             alarmTicksLeft = alarmTicks
             timerFinished()
         }
@@ -717,10 +719,12 @@ final class PetController {
 
     // MARK: - Timer
 
-    func startTimer(seconds: TimeInterval) {
+    func startTimer(seconds: TimeInterval, label: String? = nil) {
         alarmTicksLeft = 0
         SoundEffects.shared.stop(.timerDone)
-        timer.start(seconds: seconds)
+        Notifier.shared.clearTimerFinished()
+        Notifier.shared.requestPermission()
+        timer.start(seconds: seconds, label: label)
         SoundEffects.shared.play(.timerStart)
         hideBubble()
     }
@@ -753,8 +757,8 @@ final class PetController {
         case .countdown(let seconds):
             startTimer(seconds: seconds)
             Settings.shared.addRecentTimer(seconds)
-        case .until(let seconds, _):
-            startTimer(seconds: seconds)
+        case .until(let seconds, let label):
+            startTimer(seconds: seconds, label: label)
         case .stopwatch:
             startStopwatch()
         case nil:
@@ -814,6 +818,7 @@ final class PetController {
         guard timer.isFinished else { return }
         alarmTicksLeft = 0
         SoundEffects.shared.stop(.timerDone)
+        Notifier.shared.clearTimerFinished()
         timeUpTingleDue = false
         timer.stop()
         bubble.hide()

@@ -16,6 +16,7 @@ enum SettingsKey {
     static let timerSize = "timerSize"
     static let recentTimers = "recentTimers"
     static let timerAlarm = "timerAlarm"
+    static let timerNotify = "timerNotify"
 }
 
 enum PetSize: String, CaseIterable, Identifiable {
@@ -129,6 +130,7 @@ final class Settings {
             SettingsKey.sfxAmbient: false,
             SettingsKey.timerSize: TimerSize.normal.rawValue,
             SettingsKey.timerAlarm: true,
+            SettingsKey.timerNotify: true,
         ])
     }
 
@@ -159,6 +161,9 @@ final class Settings {
 
     /// Play the alarm when a timer ends (even with sound effects off).
     var timerAlarm: Bool { defaults.bool(forKey: SettingsKey.timerAlarm) }
+
+    /// Post a macOS notification when a timer ends.
+    var timerNotify: Bool { defaults.bool(forKey: SettingsKey.timerNotify) }
 
     /// Custom timer lengths in seconds, newest first (hub > Timer). Presets and "@3pm" times are not kept.
     var recentTimers: [TimeInterval] {

@@ -1,11 +1,12 @@
 import AppKit
 import os
 
-/// Diagnostics for display bugs. Debug level, so it costs nothing unless streamed:
+/// Diagnostics (display bugs, timer notifications). Debug level, so it costs nothing unless streamed:
 ///   log stream --level debug --predicate 'subsystem == "local.spiderbuddy"'
 enum Log {
     static let fullscreen = Logger(subsystem: "local.spiderbuddy", category: "fullscreen")
     static let display = Logger(subsystem: "local.spiderbuddy", category: "display")
+    static let timer = Logger(subsystem: "local.spiderbuddy", category: "timer")
 }
 
 extension NSScreen {

@@ -17,6 +17,8 @@ final class BuddyTimer {
     static let presets: [TimeInterval] = [5 * 60, 15 * 60, 25 * 60]
 
     private(set) var state = State.idle
+    /// How the running countdown was asked for, if not as a length ("3:00 PM" for "@3pm").
+    private(set) var label: String?
     var now: () -> Date = Date.init                     // replaceable in tests
 
     /// Running or paused (not idle, not finished).
@@ -39,12 +41,14 @@ final class BuddyTimer {
         return false
     }
 
-    func start(seconds: TimeInterval) {
+    func start(seconds: TimeInterval, label: String? = nil) {
+        self.label = label
         let seconds = min(max(seconds, 1), Self.maxSeconds)
         state = .countdown(end: now().addingTimeInterval(seconds), total: seconds)
     }
 
     func startStopwatch() {
+        label = nil
         state = .stopwatch(start: now())
     }
 
@@ -77,6 +81,11 @@ final class BuddyTimer {
         case .countdown(_, let total), .countdownPaused(_, let total), .finished(_, let total): return total
         default: return nil
         }
+    }
+
+    /// The countdown for messages: "25m", "1h 30m", or its clock time ("3:00 PM").
+    var description: String? {
+        label ?? total.map(DurationParser.describe)
     }
 
     /// What the bubble shows: time left (rounded up, so it never reads 0:00 while running)
