@@ -13,6 +13,9 @@ enum SettingsKey {
     static let sfxEnabled = "sfxEnabled"
     static let sfxVolume = "sfxVolume"
     static let sfxAmbient = "sfxAmbient"
+    static let timerSize = "timerSize"
+    static let recentTimers = "recentTimers"
+    static let timerAlarm = "timerAlarm"
 }
 
 enum PetSize: String, CaseIterable, Identifiable {
@@ -86,6 +89,20 @@ enum BubbleFrequency: String, CaseIterable, Identifiable {
     }
 }
 
+enum TimerSize: String, CaseIterable, Identifiable {
+    case small, normal, large
+    var id: Self { self }
+    var title: String { rawValue.capitalized }
+    /// Timer bubble text size in points (the pixel font is designed for multiples of 8 px).
+    var fontSize: CGFloat {
+        switch self {
+        case .small: return 8
+        case .normal: return 10
+        case .large: return 12
+        }
+    }
+}
+
 enum BubbleFont: String, CaseIterable, Identifiable {
     case pixel, system
     var id: Self { self }
@@ -110,6 +127,8 @@ final class Settings {
             SettingsKey.sfxEnabled: true,
             SettingsKey.sfxVolume: 0.4,
             SettingsKey.sfxAmbient: false,
+            SettingsKey.timerSize: TimerSize.normal.rawValue,
+            SettingsKey.timerAlarm: true,
         ])
     }
 
@@ -124,6 +143,7 @@ final class Settings {
     var webLength: WebLength { value(SettingsKey.webLength, .medium) }
     var bubbleFrequency: BubbleFrequency { value(SettingsKey.bubbleFrequency, .normal) }
     var bubbleFont: BubbleFont { value(SettingsKey.bubbleFont, .pixel) }
+    var timerSize: TimerSize { value(SettingsKey.timerSize, .normal) }
 
     /// Sound effects on or off.
     var sfxEnabled: Bool {
@@ -136,6 +156,20 @@ final class Settings {
 
     /// Also play sounds for things he does on his own (the idle yo-yo on the web).
     var sfxAmbient: Bool { defaults.bool(forKey: SettingsKey.sfxAmbient) }
+
+    /// Play the alarm when a timer ends (even with sound effects off).
+    var timerAlarm: Bool { defaults.bool(forKey: SettingsKey.timerAlarm) }
+
+    /// Custom timer lengths in seconds, newest first (hub > Timer). Presets and "@3pm" times are not kept.
+    var recentTimers: [TimeInterval] {
+        defaults.array(forKey: SettingsKey.recentTimers) as? [TimeInterval] ?? []
+    }
+
+    func addRecentTimer(_ seconds: TimeInterval) {
+        guard !BuddyTimer.presets.contains(seconds) else { return }
+        let recent = [seconds] + recentTimers.filter { $0 != seconds }
+        defaults.set(Array(recent.prefix(3)), forKey: SettingsKey.recentTimers)
+    }
 
     /// Follow the display with keyboard focus (true) or stay on the one he was left on.
     var followActiveDisplay: Bool { defaults.bool(forKey: SettingsKey.followActiveDisplay) }

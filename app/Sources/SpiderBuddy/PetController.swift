@@ -12,11 +12,21 @@ final class PetController {
     // Speech bubbles. Tune these, then rebuild.
     private var bubbleEvery: ClosedRange<Int> { Settings.shared.bubbleFrequency.ticks }   // Settings > Speech
     private let bubbleShowTicks = 50                        // 5 s on screen
+    private let timeUpTicks = 300                           // "Time's up!" stays 30 s on screen unless dismissed
 
     private let window = PetWindow()
     private let view: SpriteView
     private let indicator = IndicatorWindow()
     private let bubble = SpeechBubble()
+    private let input = InputBubble()         // hub > Timer > Custom…: he holds still while it is open
+    /// Countdown or stopwatch shown in his bubble (hub > Timer).
+    let timer = BuddyTimer()
+    private var timeUpShownTicks = 0          // how long "Time's up!" has been on screen
+    private var timeUpTingleDue = false       // finished while he was out of sight: tingle once he is back
+    private var alarmTicksLeft = 0            // > 0 while the alarm repeats (also while he is hidden)
+    private let alarmTicks = 300              // 30 s
+    /// The alarm restarts every 3 s, or back to back if the sound is longer (a loop).
+    private lazy var alarmEveryTicks = max(30, Int((SoundEffects.shared.duration(.timerDone) * 10).rounded()))
 
     enum Edge { case top, bottom, left, right }
 
@@ -147,7 +157,7 @@ final class PetController {
         followActiveScreen()
         // on the bottom and walls he stays put while he is talking; on the web he carries on.
         // Paused: frozen in place (but still draggable, and a click's tingle still plays out).
-        if (!isPaused || isHeld || isTingling) && !isHubOpen && !(bubbleTicksLeft > 0 && isOnBottomOrWall) {
+        if (!isPaused || isHeld || isTingling) && !isHubOpen && !input.isOpen && !(bubbleTicksLeft > 0 && isOnBottomOrWall) {
             let old = mode
             mode = advanced(mode)
             playWebSounds(from: old, to: mode)
@@ -629,16 +639,40 @@ final class PetController {
     }
 
     /// Shows `text` in his bubble now, even with random lines turned off or while paused.
+    /// Takes the timer's place for a moment; the timer comes back after.
     func say(_ text: String) {
         guard !hiddenForFullscreen, !isHiddenByUser else { return }
-        bubble.text = text
+        styleBubble(text)
         bubbleIsRandom = false
         bubbleTicksLeft = bubbleShowTicks
         positionBubble()
     }
 
+    private func styleBubble(_ text: String, icon: SpeechBubble.Icon? = nil, hoverIcon: SpeechBubble.Icon? = nil,
+                             fontSize: CGFloat? = nil, onClick: (() -> Void)? = nil) {
+        bubble.text = text
+        bubble.icon = icon
+        bubble.hoverIcon = hoverIcon
+        bubble.fontSize = fontSize
+        bubble.onClick = onClick
+    }
+
+    /// One bubble, by priority: a line he is saying (say or random), then the timer, then
+    /// (only with no timer) a new random line when one is due.
     private func updateBubble() {
+        if timer.checkFinished() {
+            alarmTicksLeft = alarmTicks
+            timerFinished()
+        }
+        if alarmTicksLeft > 0 {
+            if alarmTicksLeft % alarmEveryTicks == 0 { SoundEffects.shared.play(.timerDone) }
+            alarmTicksLeft -= 1
+        }
         guard !hiddenForFullscreen, !isHiddenByUser else { return }
+        if input.isOpen {   // the typing bubble takes his bubble's place
+            bubble.hide()
+            return
+        }
         if bubbleTicksLeft > 0 {
             if bubbleTicksLeft == 1 {
                 hideBubble()
@@ -648,25 +682,140 @@ final class PetController {
             }
             return
         }
+        if timer.isActive || timer.isFinished {
+            showTimerBubble()
+            return
+        }
         guard !isPaused, Settings.shared.bubblesEnabled else { return }
         if ticksToBubble > 0 { ticksToBubble -= 1 }
         guard ticksToBubble == 0, canSpeak else { return }   // when due, waits for him to be stationary
-        bubble.text = SpeechLines.all.randomElement() ?? "Hey!"
+        styleBubble(SpeechLines.all.randomElement() ?? "Hey!")
         bubbleIsRandom = true
         bubbleTicksLeft = bubbleShowTicks
         positionBubble()
     }
 
     private func positionBubble() {
-        guard let (sprite, origin) = shown, let face = sprite.face else { return }
-        let point = NSPoint(x: origin.x + face.x * scale, y: origin.y + (CGFloat(sprite.height) - face.y) * scale)
-        bubble.show(pointingAt: point, side: bubbleSide, within: screen.visibleFrame)
+        guard let face = facePoint() else { return }
+        bubble.show(pointingAt: face, side: bubbleSide, within: screen.visibleFrame)
     }
 
+    /// His face on screen, where bubbles point.
+    private func facePoint() -> NSPoint? {
+        guard let (sprite, origin) = shown, let face = sprite.face else { return nil }
+        return NSPoint(x: origin.x + face.x * scale, y: origin.y + (CGFloat(sprite.height) - face.y) * scale)
+    }
+
+    /// Ends the line he is saying and hides the bubble; a running timer shows again next tick.
     private func hideBubble() {
-        guard bubbleTicksLeft > 0 else { return }
-        bubbleTicksLeft = 0
-        ticksToBubble = Int.random(in: bubbleEvery)
+        if bubbleTicksLeft > 0 {
+            bubbleTicksLeft = 0
+            ticksToBubble = Int.random(in: bubbleEvery)
+        }
+        bubble.hide()
+    }
+
+    // MARK: - Timer
+
+    func startTimer(seconds: TimeInterval) {
+        alarmTicksLeft = 0
+        SoundEffects.shared.stop(.timerDone)
+        timer.start(seconds: seconds)
+        SoundEffects.shared.play(.timerStart)
+        hideBubble()
+    }
+
+    func startStopwatch() {
+        alarmTicksLeft = 0
+        SoundEffects.shared.stop(.timerDone)
+        timer.startStopwatch()
+        SoundEffects.shared.play(.timerStart)
+        hideBubble()
+    }
+
+    func toggleTimerPause() {
+        timer.togglePause()
+    }
+
+    /// Opens the typing bubble next to him for a custom timer ("45m", "1:30", "@3pm", ...).
+    func askForTimer() {
+        guard !isHeld, !isFlying, !hiddenForFullscreen, !isHiddenByUser, let face = facePoint() else { return }
+        cancelPendingClick()
+        hideBubble()
+        input.onSubmit = { [weak self] text in self?.submitTimer(text) ?? true }
+        input.onClose = nil
+        input.show(placeholder: "25m, 1:30, @3pm", hint: "Enter to start · Esc to cancel",
+                   pointingAt: face, side: bubbleSide, within: screen.visibleFrame)
+    }
+
+    private func submitTimer(_ text: String) -> Bool {
+        switch DurationParser.parse(text) {
+        case .countdown(let seconds):
+            startTimer(seconds: seconds)
+            Settings.shared.addRecentTimer(seconds)
+        case .until(let seconds, _):
+            startTimer(seconds: seconds)
+        case .stopwatch:
+            startStopwatch()
+        case nil:
+            input.showError("Try 45m, 1h30m, 1:30 or @3pm")
+            return false
+        }
+        return true
+    }
+
+    func stopTimer() {
+        timer.stop()
+        bubble.hide()
+    }
+
+    /// The timer readout, following him on every edge while he carries on (he does not stop
+    /// for it the way he does for lines). Out of the way while he is held or flying.
+    private func showTimerBubble() {
+        guard !isHeld, !isFlying else {
+            bubble.hide()
+            return
+        }
+        let size = Settings.shared.timerSize.fontSize
+        if timer.isFinished {
+            if timeUpTingleDue { timerFinished() }
+            timeUpShownTicks += 1
+            if timeUpShownTicks >= timeUpTicks {
+                dismissTimeUp()
+                return
+            }
+            // always the largest size, whatever the timer size setting: it has to be noticed
+            let largest = TimerSize.allCases.map(\.fontSize).max()
+            styleBubble("Time's up!", icon: .clock, fontSize: largest) { [weak self] in self?.dismissTimeUp() }
+        } else {
+            // hovering shows what a click does: pause a running timer, resume a paused one
+            styleBubble(timer.display, icon: timer.isPaused ? .pause : .clock,
+                        hoverIcon: timer.isPaused ? .play : .pause, fontSize: size) {
+                [weak self] in self?.toggleTimerPause()
+            }
+        }
+        positionBubble()
+    }
+
+    /// A countdown just ran out: spider-sense tingle (now, or once he is back on screen);
+    /// the bubble says so.
+    private func timerFinished() {
+        timeUpShownTicks = 0
+        guard !hiddenForFullscreen, !isHiddenByUser, !isHeld, !isFlying, !isTingling else {
+            timeUpTingleDue = true
+            return
+        }
+        timeUpTingleDue = false
+        mode = .tingle(ticks: 8, resume: mode)
+        render()
+    }
+
+    private func dismissTimeUp() {
+        guard timer.isFinished else { return }
+        alarmTicksLeft = 0
+        SoundEffects.shared.stop(.timerDone)
+        timeUpTingleDue = false
+        timer.stop()
         bubble.hide()
     }
 
@@ -696,6 +845,10 @@ final class PetController {
     /// Short spider-sense, then back to whatever he was doing.
     private func singleClicked() {
         guard !isHeld, !isFlying else { return }
+        if timer.isFinished {   // the click acknowledges "Time's up!"
+            dismissTimeUp()
+            return
+        }
         if case .tingle = mode { return }
         mode = .tingle(ticks: 4, resume: mode)
         SoundEffects.shared.play(.tingle)

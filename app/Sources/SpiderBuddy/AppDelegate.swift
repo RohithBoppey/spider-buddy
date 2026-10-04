@@ -33,12 +33,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .toggle("Speech Bubbles", isOn: Settings.shared.bubblesEnabled) { [weak self] in self?.toggleBubbles() },
             .toggle("Sounds", isOn: Settings.shared.sfxEnabled) { Settings.shared.sfxEnabled.toggle() },
             .separator,
-            .comingSoon("Timer"),
+            timerHubItem(pet),
             .comingSoon("Ask AI"),
             .separator,
             .action("Quit") { NSApp.terminate(nil) },
         ]
         HubMenu.popUp(items, with: event, for: view)
+    }
+
+    /// Timer ▸ : presets when idle; Pause/Resume and Stop while one runs (time left in the title).
+    private func timerHubItem(_ pet: PetController) -> HubItem {
+        let timer = pet.timer
+        if timer.isActive {
+            return .submenu("Timer   \(timer.display)", [
+                .action(timer.isPaused ? "Resume" : "Pause") { pet.toggleTimerPause() },
+                .action("Stop") { pet.stopTimer() },
+            ])
+        }
+        func start(_ seconds: TimeInterval) -> HubItem {
+            .action(DurationParser.describe(seconds)) { pet.startTimer(seconds: seconds) }
+        }
+        let recent = Settings.shared.recentTimers
+        return .submenu("Timer", BuddyTimer.presets.map(start)
+            + (recent.isEmpty ? [] : [.separator] + recent.map(start))
+            + [
+                .separator,
+                // after the menu has closed, so the typing bubble can take the keyboard
+                .action("Custom…") { DispatchQueue.main.async { pet.askForTimer() } },
+                .action("Stopwatch") { pet.startStopwatch() },
+            ])
     }
 
     // MARK: - Menu bar
@@ -136,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .applicationName: "Spider Buddy",
             .credits: NSAttributedString(
                 string: "Your friendly neighborhood desktop pet.\nSprites and character © Marvel. Personal project.\n"
-                    + "Sound effects by Kenney and artisticdude (CC0).",
+                    + "Sound effects by Kenney and artisticdude (CC0), foolboymedia (CC BY-NC 4.0) and thirsk (CC BY 4.0).",
                 attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]),
         ])
     }

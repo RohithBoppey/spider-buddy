@@ -20,6 +20,9 @@ final class SpeechBubble: NSPanel {
     /// Where the bubble sits relative to the face.
     enum Side { case left, right, above }
 
+    /// A small pixel icon drawn before the text (the pixel font has no emoji).
+    enum Icon { case clock, pause, play }
+
     // Tune these, then rebuild.
     static var usePixelFont: Bool { Settings.shared.bubbleFont == .pixel }
 
@@ -53,13 +56,50 @@ final class SpeechBubble: NSPanel {
 
     var text: String {
         get { bubbleView.text }
-        set { bubbleView.text = newValue }
+        set { if newValue != bubbleView.text { bubbleView.text = newValue } }
+    }
+
+    var icon: Icon? {
+        get { bubbleView.icon }
+        set { if newValue != bubbleView.icon { bubbleView.icon = newValue } }
+    }
+
+    /// Shown instead of `icon` while the pointer is over a clickable bubble: what a click does.
+    var hoverIcon: Icon? {
+        get { bubbleView.hoverIcon }
+        set { if newValue != bubbleView.hoverIcon { bubbleView.hoverIcon = newValue } }
+    }
+
+    /// Text size in points; nil = the standard bubble size.
+    var fontSize: CGFloat? {
+        get { bubbleView.fontSize }
+        set { if newValue != bubbleView.fontSize { bubbleView.fontSize = newValue } }
+    }
+
+    /// Set to make the bubble clickable (the timer); nil = clicks pass through, as for speech.
+    var onClick: (() -> Void)? {
+        get { bubbleView.onClick }
+        set {
+            bubbleView.onClick = newValue
+            ignoresMouseEvents = newValue == nil
+            if newValue == nil { bubbleView.endHover() }   // stops receiving mouseExited
+        }
     }
 
     /// Places the bubble on `side` of `face` (screen points), flipping sides or sliding it
     /// so it stays inside `bounds` (the screen's visible area).
     func show(pointingAt face: NSPoint, side preferred: Side, within bounds: NSRect) {
-        let box = bubbleView.boxSize()
+        let (frame, side, tailAt) = Self.placement(box: bubbleView.boxSize(), pointingAt: face, side: preferred, within: bounds)
+        bubbleView.configure(side: side, tailAt: tailAt)
+        setFrame(frame, display: true)
+        orderFrontRegardless()
+    }
+
+    /// Window frame for a bubble whose box (without the tail) is `box`, on `preferred` side of
+    /// `face`, flipped or slid to stay inside `bounds`; plus the side used and where the tail
+    /// meets the box (view coordinates, y down). Shared with InputBubble.
+    static func placement(box: CGSize, pointingAt face: NSPoint, side preferred: Side,
+                          within bounds: NSRect) -> (frame: NSRect, side: Side, tailAt: CGFloat) {
         let tail = BubbleView.tailExtent
         var side = preferred
         if side == .right && face.x + Self.gapBeside + tail + box.width > bounds.maxX { side = .left }
@@ -83,77 +123,192 @@ final class SpeechBubble: NSPanel {
         case .right, .left: tailAt = frame.maxY - face.y
         case .above: tailAt = face.x - frame.minX
         }
-        bubbleView.configure(side: side, tailAt: tailAt)
-        setFrame(frame, display: true)
-        orderFrontRegardless()
+        return (frame, side, tailAt)
     }
 
     func hide() {
         orderOut(nil)
+        bubbleView.endHover()   // no mouseExited arrives once the window is gone
     }
 }
 
 /// Draws the bubble: dark outline, white fill, stepped corners and tail, pixel text.
-private final class BubbleView: NSView {
+final class BubbleView: NSView {
     static let tailLength: CGFloat = 8
     private static let outline: CGFloat = 2
     /// Tail plus its outline: how far the tail reaches past the box.
     static let tailExtent: CGFloat = tailLength + outline
-    private static let padding: CGFloat = 6
-    private static let ink = NSColor(red: 0x21 / 255, green: 0x21 / 255, blue: 0x21 / 255, alpha: 1)
+    static let padding: CGFloat = 6
+    static let ink = NSColor(red: 0x21 / 255, green: 0x21 / 255, blue: 0x21 / 255, alpha: 1)
 
     var text = "" { didSet { needsDisplay = true } }
+    var icon: SpeechBubble.Icon? { didSet { needsDisplay = true } }
+    var hoverIcon: SpeechBubble.Icon? { didSet { needsDisplay = true } }
+    private var isHovering = false { didSet { needsDisplay = true } }
+    /// The icon to draw now: the click's action while hovered, otherwise the state.
+    private var shownIcon: SpeechBubble.Icon? { isHovering && onClick != nil ? hoverIcon ?? icon : icon }
+    var fontSize: CGFloat? { didSet { needsDisplay = true } }
+    var onClick: (() -> Void)?
     private var side = SpeechBubble.Side.right
     private var tailAt: CGFloat = 0
 
     override var isFlipped: Bool { true }
 
-    private static var font: NSFont {
-        if SpeechBubble.usePixelFont, let font = NSFont(name: "PressStart2P-Regular", size: 8) { return font }
-        return NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-    }
+    // Text attributes are made once per font and size, and text is measured only when it
+    // changes: the timer bubble moves and redraws ~10 times a second, and building fonts and
+    // laying out text that often crashed inside CoreText (2026-10-04, v1.2 development).
+    private static var attributesCache: [String: [NSAttributedString.Key: Any]] = [:]
+    private var measured: (key: String, size: CGSize)?
+
+    private var fontKey: String { "\(SpeechBubble.usePixelFont ? "pixel" : "system")-\(fontSize ?? 8)" }
 
     private var attributes: [NSAttributedString.Key: Any] {
+        let key = fontKey
+        if let cached = Self.attributesCache[key] { return cached }
+        let size = fontSize ?? 8
+        let font = SpeechBubble.usePixelFont ? NSFont(name: "PressStart2P-Regular", size: size) : nil
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = SpeechBubble.usePixelFont ? 4 : 3
-        return [.font: Self.font, .foregroundColor: Self.ink, .paragraphStyle: paragraph]
+        paragraph.lineSpacing = font != nil ? 4 : 3
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font ?? NSFont.monospacedSystemFont(ofSize: size * 11 / 8, weight: .regular),
+            .foregroundColor: Self.ink,
+            .paragraphStyle: paragraph.copy(),
+        ]
+        Self.attributesCache[key] = attributes
+        return attributes
     }
 
     private func textSize() -> CGSize {
+        let key = fontKey + "\u{0}" + text
+        if let measured, measured.key == key { return measured.size }
         let rect = (text as NSString).boundingRect(
             with: CGSize(width: SpeechBubble.maxTextWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes)
-        return CGSize(width: ceil(rect.width), height: ceil(rect.height))
+        let size = CGSize(width: ceil(rect.width), height: ceil(rect.height))
+        measured = (key, size)
+        return size
     }
+
+    /// Icon side length in points: 8 icon pixels, as tall as a capital letter of the pixel font.
+    private var iconSize: CGFloat { icon == nil ? 0 : (fontSize ?? 8) }
+    private var iconGap: CGFloat { icon == nil ? 0 : (fontSize ?? 8) * 0.75 }
 
     /// The box without the tail.
     func boxSize() -> CGSize {
         let t = textSize()
-        return CGSize(width: t.width + 2 * Self.padding, height: t.height + 2 * Self.padding)
+        return CGSize(width: iconSize + iconGap + t.width + 2 * Self.padding,
+                      height: max(t.height, iconSize) + 2 * Self.padding)
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        // .activeAlways: the app is never active while you hover him
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard onClick != nil else { return }
+        isHovering = true
+        NSCursor.pointingHand.push()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        endHover()
+    }
+
+    func endHover() {
+        guard isHovering else { return }
+        isHovering = false
+        NSCursor.pop()
+    }
+
+    /// 8x8 pixel icons, rows top to bottom.
+    private static let iconPixels: [SpeechBubble.Icon: [String]] = [
+        .clock: ["..####..",
+                 ".#....#.",
+                 "#...#..#",
+                 "#...#..#",
+                 "#...###.",
+                 "#......#",
+                 ".#....#.",
+                 "..####.."],
+        .play:  ["........",
+                 ".##.....",
+                 ".####...",
+                 ".######.",
+                 ".######.",
+                 ".####...",
+                 ".##.....",
+                 "........"],
+        .pause: ["........",
+                 ".##..##.",
+                 ".##..##.",
+                 ".##..##.",
+                 ".##..##.",
+                 ".##..##.",
+                 ".##..##.",
+                 "........"],
+    ]
+
+    private func drawIcon(_ icon: SpeechBubble.Icon, at origin: CGPoint) {
+        guard let rows = Self.iconPixels[icon] else { return }
+        let px = iconSize / 8
+        Self.ink.setFill()
+        for (y, row) in rows.enumerated() {
+            for (x, cell) in row.enumerated() where cell == "#" {
+                NSRect(x: origin.x + CGFloat(x) * px, y: origin.y + CGFloat(y) * px, width: px, height: px).fill()
+            }
+        }
     }
 
     func configure(side: SpeechBubble.Side, tailAt: CGFloat) {
+        guard side != self.side || tailAt != self.tailAt else { return }   // moving alone needs no redraw
         self.side = side
         self.tailAt = tailAt
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let o = Self.outline, reach = Self.tailExtent
-        var box = CGRect(origin: .zero, size: boxSize())
-        switch side {
-        case .right: box.origin.x = reach    // tail on the left, pointing left at the face
-        case .left: box.origin.x = 0         // tail on the right
-        case .above: box.origin.y = 0        // tail below
-        }
+        let box = Self.box(size: boxSize(), side: side)
+        Self.drawFrame(box: box, side: side, tailAt: tailAt)
 
+        NSGraphicsContext.current?.shouldAntialias = !SpeechBubble.usePixelFont   // crisp pixel glyphs
+        let t = textSize()
+        let contentHeight = max(t.height, iconSize)
+        if let icon = shownIcon {
+            drawIcon(icon, at: CGPoint(x: box.minX + Self.padding, y: box.minY + Self.padding + (contentHeight - iconSize) / 2))
+        }
+        (text as NSString).draw(
+            with: NSRect(x: box.minX + Self.padding + iconSize + iconGap, y: box.minY + Self.padding + (contentHeight - t.height) / 2,
+                         width: t.width, height: t.height),
+            options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes)
+    }
+
+    /// Where the box sits in the view (y down): beside the tail.
+    static func box(size: CGSize, side: SpeechBubble.Side) -> CGRect {
+        var box = CGRect(origin: .zero, size: size)
+        if side == .right { box.origin.x = tailExtent }   // tail on the left, pointing left at the face
+        return box                                        // .left: tail on the right; .above: tail below
+    }
+
+    /// The outline, paper, stepped corners and tail, in a flipped view.
+    static func drawFrame(box: CGRect, side: SpeechBubble.Side, tailAt: CGFloat) {
+        let o = outline
         // tail position along its edge, kept clear of the stepped corners
-        let steps = 4, step = Self.tailLength / CGFloat(steps)
+        let steps = 4, step = tailLength / CGFloat(steps)
         let along: CGFloat = side == .above ? box.width : box.height
         let at = min(max(tailAt, 9), along - 9)
 
         // outline pass (grow = o), then paper pass (grow = 0) on top
-        for (color, grow) in [(Self.ink, o), (NSColor.white, 0)] {
+        for (color, grow) in [(ink, o), (NSColor.white, 0)] {
             color.setFill()
             let inset = o - grow   // 0 for the outline, o for the paper
             // box with stepped (pixel) corners
@@ -175,11 +330,5 @@ private final class BubbleView: NSView {
                 }
             }
         }
-
-        NSGraphicsContext.current?.shouldAntialias = !SpeechBubble.usePixelFont   // crisp pixel glyphs
-        let t = textSize()
-        (text as NSString).draw(
-            with: NSRect(x: box.minX + Self.padding, y: box.minY + Self.padding, width: t.width, height: t.height),
-            options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes)
     }
 }
