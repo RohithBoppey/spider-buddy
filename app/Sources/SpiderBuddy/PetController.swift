@@ -8,6 +8,7 @@ final class PetController {
     private let dragThreshold: CGFloat = 4   // points the cursor must move before a click becomes a drag
     private let gravity: CGFloat = 2500      // points/s², for the fall to the bottom edge
     private let zipSeconds: TimeInterval = 0.25   // sideways zip onto a wall
+    private let doubleClickSeconds: TimeInterval = 0.3   // a single click waits this long for a second one
     // Speech bubbles. Tune these, then rebuild.
     private var bubbleEvery: ClosedRange<Int> { Settings.shared.bubbleFrequency.ticks }   // Settings > Speech
     private let bubbleShowTicks = 50                        // 5 s on screen
@@ -45,6 +46,8 @@ final class PetController {
     private var mode: Mode
     private var screen: NSScreen              // screen he is on
     private var lastActiveID: CGDirectDisplayID?   // display with keyboard focus at the last check
+    private var pendingActive: (id: CGDirectDisplayID, ticks: Int)?   // a newly focused display, not yet trusted
+    private let followDelayTicks = 8          // 0.8 s: focus hopping between windows (iTerm panes) is ignored
     private var hiddenForFullscreen = false
     private(set) var isPaused = false         // menu: Pause
     private(set) var isHiddenByUser = false   // menu: Hide Spider Buddy
@@ -52,6 +55,14 @@ final class PetController {
     private var shown: (sprite: Sprite, origin: NSPoint)?   // what is on screen now, for the face
     private lazy var ticksToBubble = Int.random(in: bubbleEvery)
     private var bubbleTicksLeft = 0           // > 0 while a bubble is showing
+    private var bubbleIsRandom = false        // a random line (not one he says because you asked)
+    private var pendingClick: Timer?          // a single click, waiting to see if a second one follows
+    private var isHubOpen = false             // right-click hub showing: he holds still beside it
+    private var webDropSoundDue = false       // you put him on the top edge: stretch sound when he slides down
+
+    /// Right-click (or ctrl-click) on him: show the hub for this event, anchored to `view`.
+    /// Called synchronously; he stays frozen until it returns.
+    var onHubRequested: ((NSEvent, NSView) -> Void)?
 
     init?(library: SpriteLibrary) {
         let hang = library.frames("top-hang")
@@ -92,6 +103,7 @@ final class PetController {
         view.onMouseDown = { [weak self] in self?.mouseDown() }
         view.onMouseDragged = { [weak self] in self?.mouseDragged() }
         view.onMouseUp = { [weak self] in self?.mouseUp() }
+        view.onRightClick = { [weak self] event in self?.rightClicked(event) }
         window.contentView = view
     }
 
@@ -111,10 +123,13 @@ final class PetController {
     /// A display was connected, disconnected or rearranged: if his screen is gone, move him
     /// to the active one, keeping his edge and relative position.
     @objc private func screensChanged() {
+        Log.display.debug("screens changed: \(NSScreen.screens.map(\.logDescription).joined(separator: " | "), privacy: .public)")
         guard !NSScreen.screens.contains(where: { $0.displayID == screen.displayID }) else { return }
         let old = screen
         screen = NSScreen.main ?? NSScreen.screens[0]
         lastActiveID = screen.displayID
+        pendingActive = nil
+        Log.display.debug("his screen is gone, moving to \(self.screen.logDescription, privacy: .public)")
         if isHeld || isFlying { return }
         mode = relocated(mode, from: old, to: screen)
         hideBubble()
@@ -131,9 +146,11 @@ final class PetController {
     @objc private func tick() {
         followActiveScreen()
         // on the bottom and walls he stays put while he is talking; on the web he carries on.
-        // Paused: frozen in place (but still draggable).
-        if (!isPaused || isHeld) && !(bubbleTicksLeft > 0 && isOnBottomOrWall) {
+        // Paused: frozen in place (but still draggable, and a click's tingle still plays out).
+        if (!isPaused || isHeld || isTingling) && !isHubOpen && !(bubbleTicksLeft > 0 && isOnBottomOrWall) {
+            let old = mode
             mode = advanced(mode)
+            playWebSounds(from: old, to: mode)
         }
         render()
         updateBubble()
@@ -158,9 +175,10 @@ final class PetController {
         }
     }
 
-    /// Call after Settings.bubblesEnabled changes.
+    /// Call after Settings.bubblesEnabled changes. Only random lines stop; things he says
+    /// because you asked (say) stay.
     func bubblesSettingChanged() {
-        if !Settings.shared.bubblesEnabled { hideBubble() }
+        if !Settings.shared.bubblesEnabled && bubbleIsRandom { hideBubble() }
     }
 
     /// Applies Settings window changes live (any UserDefaults write lands here, so it is idempotent).
@@ -190,8 +208,7 @@ final class PetController {
         let from = NSPoint(x: f.midX, y: f.midY + 80)
         switch edge {
         case .top:
-            mode = .top(TopHang(x: clampedHangX(f.midX, on: screen), settleTicks: 3))
-            render()
+            attachWeb(x: clampedHangX(f.midX, on: screen))
         case .bottom:
             fall(to: clampedCrawlX(f.midX, on: screen), from: from)
         case .left:
@@ -318,6 +335,11 @@ final class PetController {
         return false
     }
 
+    private var isTingling: Bool {
+        if case .tingle = mode { return true }
+        return false
+    }
+
     private var isFlying: Bool {
         if case .flying = mode { return true }
         return false
@@ -335,6 +357,8 @@ final class PetController {
             let mouse = NSEvent.mouseLocation
             guard hypot(mouse.x - start.x, mouse.y - start.y) >= dragThreshold else { return }
             mode = .held(ticks: 0)
+            cancelPendingClick()
+            SoundEffects.shared.play(.grab)
         }
         render()
         let mouse = NSEvent.mouseLocation
@@ -346,27 +370,46 @@ final class PetController {
         guard mouseDownAt != nil else { return }
         mouseDownAt = nil
         guard isHeld else {
-            // quick click: short spider-sense, then back to whatever he was doing
-            if case .tingle = mode { return }
-            mode = .tingle(ticks: 4, resume: mode)
-            render()
+            quickClicked()
             return
         }
         indicator.hide()
+        SoundEffects.shared.play(.release)
         let mouse = NSEvent.mouseLocation
         screen = screenUnderMouse()
         lastActiveID = (NSScreen.main ?? screen).displayID   // stay here until the active display changes
+        pendingActive = nil
+        Log.display.debug("dropped at (\(Int(mouse.x)),\(Int(mouse.y))) on \(self.screen.logDescription, privacy: .public), edge \(String(describing: self.nearestEdge(mouse, on: self.screen)), privacy: .public)")
         switch nearestEdge(mouse, on: screen) {
         case .top:
             // web attaches to the top edge straight above the release point, then he drops
-            mode = .top(TopHang(x: clampedHangX(mouse.x, on: screen), settleTicks: 3))
-            render()
+            attachWeb(x: clampedHangX(mouse.x, on: screen))
         case .bottom:
             fall(to: clampedCrawlX(mouse.x, on: screen), from: mouse)
         case .left:
             zip(toRightWall: false, from: mouse)
         case .right:
             zip(toRightWall: true, from: mouse)
+        }
+    }
+
+    /// Shoots a web to the top edge above `x`; he slides down it after a moment.
+    private func attachWeb(x: CGFloat) {
+        mode = .top(TopHang(x: x, settleTicks: 3))
+        SoundEffects.shared.play(.thwip)
+        webDropSoundDue = true
+        render()
+    }
+
+    /// Web sounds: the slide down after you put him on the top edge, and (if allowed) his idle yo-yo.
+    private func playWebSounds(from old: Mode, to new: Mode) {
+        guard case .top(let before) = old, case .top(let after) = new,
+              !hiddenForFullscreen, !isHiddenByUser else { return }
+        if after.isDropping && !before.isDropping {
+            if webDropSoundDue { SoundEffects.shared.play(.stretch) }
+            webDropSoundDue = false
+        } else if after.isYoyoing && !before.isYoyoing {
+            SoundEffects.shared.play(.stretch, ambient: true)
         }
     }
 
@@ -377,9 +420,11 @@ final class PetController {
         var end = start
         end.origin.y = screen.frame.minY
         let height = start.minY - end.minY
+        SoundEffects.shared.play(.fall)
         fly(sprite, to: end, seconds: height > 0 ? TimeInterval(sqrt(2 * height / gravity)) : 0, easing: .easeIn) {
             [weak self] in
             guard let self else { return }
+            SoundEffects.shared.play(.land)
             self.mode = .bottom(BottomCrawl(x: x, cycleCount: self.crawlCycle[true]!.count))
         }
     }
@@ -391,6 +436,7 @@ final class PetController {
         var end = start
         end.origin.x = onRight ? screen.frame.maxX - start.width : screen.frame.minX
         let y = clampedWallY(start.midY, on: screen)
+        SoundEffects.shared.play(.thwip)
         fly(sprite, to: end, seconds: zipSeconds, easing: .easeOut) { [weak self] in
             guard let self else { return }
             self.mode = .wall(WallCling(onRight: onRight, y: y,
@@ -481,14 +527,31 @@ final class PetController {
 
     /// Moves him only when the active display (keyboard focus) changes, keeping his edge and
     /// relative position; a screen you dropped him on keeps him until you focus another display.
+    /// A new active display must stay active for `followDelayTicks` first, so focus briefly
+    /// hopping to another display (iTerm split panes, a window spanning both) doesn't move him.
     private func followActiveScreen() {
-        guard Settings.shared.followActiveDisplay, !isHeld, !isFlying, let active = NSScreen.main else { return }
-        guard active.displayID != lastActiveID else { return }
-        lastActiveID = active.displayID
-        guard active.displayID != screen.displayID else { return }
+        guard Settings.shared.followActiveDisplay, !isHeld, !isFlying,
+              let active = NSScreen.main, let activeID = active.displayID else { return }
+        guard activeID != lastActiveID else {
+            if pendingActive != nil {
+                Log.display.debug("focus came back to display \(activeID, privacy: .public) before the delay; staying")
+                pendingActive = nil
+            }
+            return
+        }
+        if pendingActive?.id != activeID {
+            Log.display.debug("active display now \(active.logDescription, privacy: .public); waiting")
+            pendingActive = (activeID, 0)
+        }
+        pendingActive!.ticks += 1
+        guard pendingActive!.ticks >= followDelayTicks else { return }
+        pendingActive = nil
+        lastActiveID = activeID
+        guard activeID != screen.displayID else { return }
         let old = screen
         screen = active
         mode = relocated(mode, from: old, to: active)
+        Log.display.debug("followed to \(active.logDescription, privacy: .public) from \(old.logDescription, privacy: .public), mode \(String(describing: self.mode), privacy: .public)")
     }
 
     private func relocated(_ mode: Mode, from old: NSScreen, to new: NSScreen) -> Mode {
@@ -517,9 +580,16 @@ final class PetController {
 
     /// Hides him while a full-screen video or game covers his screen (not editors, terminals, ...).
     @objc private func checkFullscreen() {
-        let hide = !isHeld && !isFlying && FullscreenDetector.isFullscreenVideoOrGame(on: screen)
+        let match = isHeld || isFlying ? nil : FullscreenDetector.match(on: screen)
+        let hide = match != nil
         guard hide != hiddenForFullscreen else { return }
         hiddenForFullscreen = hide
+        if let match {
+            Log.fullscreen.debug("hiding: \(match, privacy: .public) covers \(self.screen.logDescription, privacy: .public)")
+        } else {
+            Log.fullscreen.debug("showing again on \(self.screen.logDescription, privacy: .public)")
+        }
+        Log.fullscreen.debug("system windows: \(FullscreenDetector.systemWindowsDescription(), privacy: .public)")
         if hide {
             window.orderOut(nil)
             hideBubble()
@@ -558,8 +628,17 @@ final class PetController {
         }
     }
 
+    /// Shows `text` in his bubble now, even with random lines turned off or while paused.
+    func say(_ text: String) {
+        guard !hiddenForFullscreen, !isHiddenByUser else { return }
+        bubble.text = text
+        bubbleIsRandom = false
+        bubbleTicksLeft = bubbleShowTicks
+        positionBubble()
+    }
+
     private func updateBubble() {
-        guard !hiddenForFullscreen, !isHiddenByUser, !isPaused, Settings.shared.bubblesEnabled else { return }
+        guard !hiddenForFullscreen, !isHiddenByUser else { return }
         if bubbleTicksLeft > 0 {
             if bubbleTicksLeft == 1 {
                 hideBubble()
@@ -569,9 +648,11 @@ final class PetController {
             }
             return
         }
+        guard !isPaused, Settings.shared.bubblesEnabled else { return }
         if ticksToBubble > 0 { ticksToBubble -= 1 }
         guard ticksToBubble == 0, canSpeak else { return }   // when due, waits for him to be stationary
         bubble.text = SpeechLines.all.randomElement() ?? "Hey!"
+        bubbleIsRandom = true
         bubbleTicksLeft = bubbleShowTicks
         positionBubble()
     }
@@ -591,6 +672,50 @@ final class PetController {
 
     // MARK: - Clicks
 
+    /// A click without a drag. Waits `doubleClickSeconds` for a second one: one click is the
+    /// spider-sense tingle, two are a double-click.
+    private func quickClicked() {
+        if pendingClick != nil {
+            cancelPendingClick()
+            doubleClicked()
+            return
+        }
+        let timer = Timer(timeInterval: doubleClickSeconds, repeats: false) { [weak self] _ in
+            self?.pendingClick = nil
+            self?.singleClicked()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pendingClick = timer
+    }
+
+    private func cancelPendingClick() {
+        pendingClick?.invalidate()
+        pendingClick = nil
+    }
+
+    /// Short spider-sense, then back to whatever he was doing.
+    private func singleClicked() {
+        guard !isHeld, !isFlying else { return }
+        if case .tingle = mode { return }
+        mode = .tingle(ticks: 4, resume: mode)
+        SoundEffects.shared.play(.tingle)
+        render()
+    }
+
+    /// Reserved for Ask AI (v2.0); a teaser until then.
+    private func doubleClicked() {
+        say("Ask me anything... soon!")
+    }
+
+    private func rightClicked(_ event: NSEvent) {
+        guard !isHeld, !isFlying else { return }
+        cancelPendingClick()
+        hideBubble()
+        isHubOpen = true
+        onHubRequested?(event, view)
+        isHubOpen = false
+    }
+
     /// Clicks go through the window except over opaque sprite pixels.
     @objc private func updateMousePassthrough() {
         guard !isHeld, mouseDownAt == nil else { return }   // never drop the mouse mid-drag
@@ -605,7 +730,7 @@ final class PetController {
     }
 }
 
-private extension NSScreen {
+extension NSScreen {
     var displayID: CGDirectDisplayID? {
         (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     }

@@ -14,10 +14,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         self.pet = pet
+        pet.onHubRequested = { [weak self] event, view in self?.showHub(with: event, for: view) }
         SpeechBubble.registerFont()
         _ = Updater.shared            // starts automatic update checks
         setUpStatusItem()
         pet.start()
+    }
+
+    // MARK: - Hub (right-click on him)
+
+    /// Pet actions (and Quit); Settings and updates live in the menu-bar menu.
+    private func showHub(with event: NSEvent, for view: NSView) {
+        guard let pet else { return }
+        let edges: [(String, PetController.Edge)] = [("Top", .top), ("Bottom", .bottom), ("Left", .left), ("Right", .right)]
+        let items: [HubItem] = [
+            .submenu("Send to", edges.map { name, edge in .action(name) { pet.send(to: edge) } }),
+            .toggle("Pause", isOn: pet.isPaused) { pet.setPaused(!pet.isPaused) },
+            .toggle("Speech Bubbles", isOn: Settings.shared.bubblesEnabled) { [weak self] in self?.toggleBubbles() },
+            .toggle("Sounds", isOn: Settings.shared.sfxEnabled) { Settings.shared.sfxEnabled.toggle() },
+            .separator,
+            .comingSoon("Timer"),
+            .comingSoon("Ask AI"),
+            .separator,
+            .action("Quit") { NSApp.terminate(nil) },
+        ]
+        HubMenu.popUp(items, with: event, for: view)
     }
 
     // MARK: - Menu bar
@@ -114,7 +135,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "Spider Buddy",
             .credits: NSAttributedString(
-                string: "Your friendly neighborhood desktop pet.\nSprites and character © Marvel. Personal project.",
+                string: "Your friendly neighborhood desktop pet.\nSprites and character © Marvel. Personal project.\n"
+                    + "Sound effects by Kenney and artisticdude (CC0).",
                 attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]),
         ])
     }

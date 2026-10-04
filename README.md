@@ -50,6 +50,16 @@ time to reinstall. Look for 🕷️ in the menu bar for settings and to quit.
 > [!NOTE]
 > Needs macOS 13 (Ventura) or later.
 
+## 🙏 Credits
+
+- 🕷️ **Sprites:** from *The Amazing Spider-Man: Lethal Foes* (SNES, Japan), via
+  [The Spriters Resource](https://www.spriters-resource.com/snes/theamazingspidermanlethalfoesjpn/asset/471238).
+  Spider-Man and the original artwork are © Marvel.
+- 🔊 **Sound effects:** [Kenney](https://kenney.nl) and artisticdude, both CC0.
+- 🔤 **Font:** [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) (SIL Open Font License).
+
+Full details are in [CREDITS.md](CREDITS.md).
+
 ---
 
 ## 🧑‍💻 Development

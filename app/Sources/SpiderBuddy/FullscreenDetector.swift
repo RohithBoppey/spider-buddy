@@ -21,9 +21,14 @@ enum FullscreenDetector {
     private static var isHidingApp: [pid_t: Bool] = [:]   // per-process cache
 
     static func isFullscreenVideoOrGame(on screen: NSScreen) -> Bool {
+        match(on: screen) != nil
+    }
+
+    /// The window that makes `screen` count as a full-screen video or game, described for logs.
+    static func match(on screen: NSScreen) -> String? {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                      kCGNullWindowID) as? [[String: Any]],
-              let primary = NSScreen.screens.first else { return false }
+              let primary = NSScreen.screens.first else { return nil }
         let ownPID = ProcessInfo.processInfo.processIdentifier
 
         // CG window bounds use a top-left origin on the primary display; NSScreen uses bottom-left
@@ -42,10 +47,27 @@ enum FullscreenDetector {
             let coversScreen = abs(b.minX - target.minX) < 1 && abs(b.width - target.width) < 1
                 && abs(b.maxY - target.maxY) < 1 && b.height >= target.height - topAllowance - 1
             if coversScreen && hidesPet(pid) {
-                return true
+                let app = NSRunningApplication(processIdentifier: pid)
+                return "\(app?.localizedName ?? "?") (\(app?.bundleIdentifier ?? "?")) bounds=\(b.logDescription)"
             }
         }
-        return false
+        return nil
+    }
+
+    /// Non-app windows on screen (menu bar, Dock, wallpaper, ...) with their layers, for logs:
+    /// what differs between a real full-screen Space and a maximised window.
+    static func systemWindowsDescription() -> String {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else {
+            return "?"
+        }
+        return list.compactMap { info -> String? in
+            guard let layer = info[kCGWindowLayer as String] as? Int, layer != 0,
+                  let boundsDict = info[kCGWindowBounds as String] as? NSDictionary,
+                  let b = CGRect(dictionaryRepresentation: boundsDict) else { return nil }
+            let owner = info[kCGWindowOwnerName as String] as? String ?? "?"
+            let name = info[kCGWindowName as String] as? String ?? ""
+            return "\(owner)/\(name)@\(layer)\(b.logDescription)"
+        }.joined(separator: " ")
     }
 
     /// Apps from the list, any installed browser, and apps that declare themselves video or games.

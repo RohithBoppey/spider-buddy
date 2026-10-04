@@ -11,7 +11,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Sprites"
 cp .build/release/SpiderBuddy "$APP/Contents/MacOS/"
 cp Info.plist "$APP/Contents/"
-cp Resources/* "$APP/Contents/Resources/"   # speech lines, pixel font and its licence
+cp -R Resources/. "$APP/Contents/Resources/"   # speech lines, pixel font and its licence, Sounds/
 mkdir -p "$APP/Contents/Frameworks"
 ditto .build/release/Sparkle.framework "$APP/Contents/Frameworks/Sparkle.framework"   # in-app updates
 

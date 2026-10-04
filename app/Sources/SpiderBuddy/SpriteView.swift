@@ -11,6 +11,7 @@ final class SpriteView: NSView {
     var onMouseDown: (() -> Void)?
     var onMouseDragged: (() -> Void)?
     var onMouseUp: (() -> Void)?
+    var onRightClick: ((NSEvent) -> Void)?
 
     private let spriteLayer = CALayer()
     private let webLayer = CALayer()
@@ -62,7 +63,15 @@ final class SpriteView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) {   // ctrl-click = right-click
+            onRightClick?(event)
+            return
+        }
         onMouseDown?()
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        onRightClick?(event)
     }
 
     override func mouseDragged(with event: NSEvent) {

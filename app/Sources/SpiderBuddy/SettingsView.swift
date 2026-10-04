@@ -10,6 +10,8 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
             SpeechSettings()
                 .tabItem { Label("Speech", systemImage: "text.bubble") }
+            SoundSettings()
+                .tabItem { Label("Sound", systemImage: "speaker.wave.2") }
         }
         // grouped Forms scroll, so they report no height of their own: size the window explicitly
         .frame(width: 480, height: 470)
@@ -93,6 +95,36 @@ private struct SpeechSettings: View {
         }
         .formStyle(.grouped)
         .pickerStyle(.segmented)
+    }
+}
+
+private struct SoundSettings: View {
+    @AppStorage(SettingsKey.sfxEnabled) private var enabled = true
+    @AppStorage(SettingsKey.sfxVolume) private var volume = 0.4
+    @AppStorage(SettingsKey.sfxAmbient) private var ambient = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Sound effects", isOn: $enabled)
+                HStack {
+                    Slider(value: $volume, in: 0...1) { Text("Volume") } onEditingChanged: { editing in
+                        if !editing { SoundEffects.shared.play(.thwip) }   // hear the new level
+                    }
+                    Button { SoundEffects.shared.play(.thwip) } label: { Image(systemName: "play.fill") }
+                        .help("Play a sample")
+                }
+                .disabled(!enabled)
+                if SoundEffects.shared.has(.stretch) {   // the idle sound; hidden until there is one
+                    Toggle("Sounds while he idles on his web", isOn: $ambient)
+                        .disabled(!enabled)
+                }
+            } footer: {
+                Text("Sounds play when you drop him: the web shot, letting go, falling and landing.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 

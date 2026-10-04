@@ -10,6 +10,9 @@ enum SettingsKey {
     static let followActiveDisplay = "followActiveDisplay"
     static let bubbleFrequency = "bubbleFrequency"
     static let bubbleFont = "bubbleFont"
+    static let sfxEnabled = "sfxEnabled"
+    static let sfxVolume = "sfxVolume"
+    static let sfxAmbient = "sfxAmbient"
 }
 
 enum PetSize: String, CaseIterable, Identifiable {
@@ -104,6 +107,9 @@ final class Settings {
             SettingsKey.followActiveDisplay: true,
             SettingsKey.bubbleFrequency: BubbleFrequency.normal.rawValue,
             SettingsKey.bubbleFont: BubbleFont.pixel.rawValue,
+            SettingsKey.sfxEnabled: true,
+            SettingsKey.sfxVolume: 0.4,
+            SettingsKey.sfxAmbient: false,
         ])
     }
 
@@ -118,6 +124,18 @@ final class Settings {
     var webLength: WebLength { value(SettingsKey.webLength, .medium) }
     var bubbleFrequency: BubbleFrequency { value(SettingsKey.bubbleFrequency, .normal) }
     var bubbleFont: BubbleFont { value(SettingsKey.bubbleFont, .pixel) }
+
+    /// Sound effects on or off.
+    var sfxEnabled: Bool {
+        get { defaults.bool(forKey: SettingsKey.sfxEnabled) }
+        set { defaults.set(newValue, forKey: SettingsKey.sfxEnabled) }
+    }
+
+    /// Sound effect volume, 0...1.
+    var sfxVolume: Double { defaults.double(forKey: SettingsKey.sfxVolume) }
+
+    /// Also play sounds for things he does on his own (the idle yo-yo on the web).
+    var sfxAmbient: Bool { defaults.bool(forKey: SettingsKey.sfxAmbient) }
 
     /// Follow the display with keyboard focus (true) or stay on the one he was left on.
     var followActiveDisplay: Bool { defaults.bool(forKey: SettingsKey.followActiveDisplay) }

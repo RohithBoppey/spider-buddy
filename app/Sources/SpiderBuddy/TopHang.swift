@@ -31,6 +31,16 @@ struct TopHang {
         phase = .settle(ticks: settleTicks)
     }
 
+    var isDropping: Bool {
+        if case .drop = phase { return true }
+        return false
+    }
+
+    var isYoyoing: Bool {
+        if case .yoyo = phase { return true }
+        return false
+    }
+
     /// Index into the top-hang frames for the current phase.
     var frameIndex: Int {
         switch phase {
