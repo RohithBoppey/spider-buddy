@@ -19,9 +19,14 @@ He hangs from the menu bar on a web, crawls along the edges of your screen and d
 - 🧗 **Crawls** along the bottom and up the walls, then rests a while
 - 💬 **Speech bubbles** with little nudges (*Drink some water!*) in a pixel font
 - 🖐️ **Pick him up** and drop him somewhere else, or send him to any edge from the 🕷️ menu
+- 🖱️ **Right-click him** for a quick menu: send him to an edge, pause, timer, sounds
+- ⏱️ **Timer & stopwatch** in his bubble, which follows him around. Type `45m`, `1.5h`, `1:30` or `@3pm`,
+  add a label with `#study`, and click the bubble to pause. When time's up you get a big bubble,
+  an alarm and a notification
+- 🔊 **Sound effects** for web shots, falls and landings, with a volume setting
 - 🖥️ **Multi-display aware**: follows your active display, or stays put
-- 🙈 **Hides during fullscreen** apps so he never gets in the way
-- ⚙️ **Settings** for size, energy, web length, bubble frequency and font
+- 🙈 **Hides over full-screen videos and games** so he never gets in the way
+- ⚙️ **Settings** for size, energy, web length, speech, sounds and the timer
 - 🔄 **Updates himself** through [Sparkle](https://sparkle-project.org)
 
 ## 🚀 Install

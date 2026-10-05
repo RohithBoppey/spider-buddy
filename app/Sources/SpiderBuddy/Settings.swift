@@ -17,6 +17,7 @@ enum SettingsKey {
     static let recentTimers = "recentTimers"
     static let timerAlarm = "timerAlarm"
     static let timerNotify = "timerNotify"
+    static let timerLabelLayout = "timerLabelLayout"
 }
 
 enum PetSize: String, CaseIterable, Identifiable {
@@ -104,6 +105,15 @@ enum TimerSize: String, CaseIterable, Identifiable {
     }
 }
 
+/// Where a timer's label goes in its bubble: beside the time, or on the line under it.
+enum TimerLabelLayout: String, CaseIterable, Identifiable {
+    case horizontal, vertical
+    var id: Self { self }
+    var title: String { rawValue.capitalized }
+    /// Between the time and the label.
+    var separator: String { self == .horizontal ? "  " : "\n" }
+}
+
 enum BubbleFont: String, CaseIterable, Identifiable {
     case pixel, system
     var id: Self { self }
@@ -131,6 +141,7 @@ final class Settings {
             SettingsKey.timerSize: TimerSize.normal.rawValue,
             SettingsKey.timerAlarm: true,
             SettingsKey.timerNotify: true,
+            SettingsKey.timerLabelLayout: TimerLabelLayout.horizontal.rawValue,
         ])
     }
 
@@ -146,6 +157,7 @@ final class Settings {
     var bubbleFrequency: BubbleFrequency { value(SettingsKey.bubbleFrequency, .normal) }
     var bubbleFont: BubbleFont { value(SettingsKey.bubbleFont, .pixel) }
     var timerSize: TimerSize { value(SettingsKey.timerSize, .normal) }
+    var timerLabelLayout: TimerLabelLayout { value(SettingsKey.timerLabelLayout, .horizontal) }
 
     /// Sound effects on or off.
     var sfxEnabled: Bool {

@@ -132,6 +132,7 @@ private struct SoundSettings: View {
 
 private struct TimerSettings: View {
     @AppStorage(SettingsKey.timerSize) private var size = TimerSize.normal
+    @AppStorage(SettingsKey.timerLabelLayout) private var layout = TimerLabelLayout.horizontal
     @AppStorage(SettingsKey.timerAlarm) private var alarm = true
     @AppStorage(SettingsKey.timerNotify) private var notify = true
     @State private var alarmPlaying = false
@@ -142,14 +143,17 @@ private struct TimerSettings: View {
                 Picker("Bubble size", selection: $size) {
                     ForEach(TimerSize.allCases) { Text($0.title).tag($0) }
                 }
+                Picker("Label", selection: $layout) {
+                    ForEach(TimerLabelLayout.allCases) { Text($0.title).tag($0) }
+                }
                 HStack {
                     Spacer()
-                    BubblePreview(font: .pixel, text: "12:34", size: size.fontSize)
+                    BubblePreview(font: .pixel, text: "12:34" + layout.separator + "study", size: size.fontSize)
                     Spacer()
                 }
                 .padding(.vertical, 4)
             } footer: {
-                Text("Start a timer from the menu when you right-click him. \"Time's up!\" always shows at the largest size.")
+                Text("Right-click him for Timer. Add a label as you type (30m #study), or double-click a running timer's bubble to edit it. \"Time's up!\" always shows at the largest size.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("When a timer ends") {

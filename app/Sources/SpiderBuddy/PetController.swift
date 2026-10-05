@@ -739,8 +739,11 @@ final class PetController {
         hideBubble()
     }
 
+    /// Pause or resume, with the same tock as starting.
     func toggleTimerPause() {
+        guard timer.isActive else { return }
         timer.togglePause()
+        SoundEffects.shared.play(.timerStart)
     }
 
     /// Opens the typing bubble next to him for a custom timer ("45m", "1:30", "@3pm", ...).
@@ -835,7 +838,8 @@ final class PetController {
             styleBubble(text, icon: .clock, fontSize: largest) { [weak self] in self?.dismissTimeUp() }
         } else {
             // hovering shows what a click does: pause a running timer, resume a paused one
-            let text = shortNote.map { "\(timer.display)  \($0)" } ?? timer.display
+            let separator = Settings.shared.timerLabelLayout.separator   // label beside or under the time
+            let text = shortNote.map { timer.display + separator + $0 } ?? timer.display
             styleBubble(text, icon: timer.isPaused ? .pause : .clock,
                         hoverIcon: timer.isPaused ? .play : .pause, fontSize: size) {
                 [weak self] in self?.timerBubbleClicked()

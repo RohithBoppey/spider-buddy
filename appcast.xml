@@ -6,6 +6,15 @@
     <title>Spider Buddy</title>
     <language>en</language>
     <item>
+      <title>Version 1.2.0</title>
+      <pubDate>Mon, 05 Oct 2026 13:21:07 GMT</pubDate>
+      <sparkle:version>1.2.0</sparkle:version>
+      <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<p>Timer &amp; stopwatch in his bubble: type 45m, @3pm or 30m #study, with an alarm and notification when time's up.</p>]]></description>
+      <enclosure url="https://github.com/RohithBoppey/spider-buddy/releases/download/v1.2.0/SpiderBuddy-1.2.0.dmg" type="application/octet-stream" sparkle:edSignature="MERA9cZk2c3Vbfgys49OmQPGhsEKP9Cuwbuz1iiwy/q7aibGDmZdIlgrxj7nxPNsguOYSjU2exrNyLaSXSnyDA==" length="2711986" />
+    </item>
+    <item>
       <title>Version 1.1.0</title>
       <pubDate>Sun, 04 Oct 2026 09:48:57 GMT</pubDate>
       <sparkle:version>1.1.0</sparkle:version>
