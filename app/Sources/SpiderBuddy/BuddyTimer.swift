@@ -19,6 +19,8 @@ final class BuddyTimer {
     private(set) var state = State.idle
     /// How the running countdown was asked for, if not as a length ("3:00 PM" for "@3pm").
     private(set) var label: String?
+    /// Your name for it ("study", from "30m #study"); editable while it runs.
+    var note: String?
     var now: () -> Date = Date.init                     // replaceable in tests
 
     /// Running or paused (not idle, not finished).
@@ -41,14 +43,16 @@ final class BuddyTimer {
         return false
     }
 
-    func start(seconds: TimeInterval, label: String? = nil) {
+    func start(seconds: TimeInterval, label: String? = nil, note: String? = nil) {
         self.label = label
+        self.note = note
         let seconds = min(max(seconds, 1), Self.maxSeconds)
         state = .countdown(end: now().addingTimeInterval(seconds), total: seconds)
     }
 
-    func startStopwatch() {
+    func startStopwatch(note: String? = nil) {
         label = nil
+        self.note = note
         state = .stopwatch(start: now())
     }
 
@@ -66,6 +70,7 @@ final class BuddyTimer {
     /// Stops a running timer or dismisses "Time's up!".
     func stop() {
         state = .idle
+        note = nil
     }
 
     /// Turns a countdown that has run out into `.finished`. True exactly once per timer.
@@ -122,6 +127,7 @@ enum DurationParser {
     /// Clock times: "@3pm", "@3:30pm", "@15:30" (24-hour), "@5" (5 AM or 5 PM, whichever is next);
     /// a time already past today means tomorrow.
     /// "stopwatch" / "sw". Nil for anything else, for zero, and for more than 24 hours.
+    /// Labels ("30m #study") are read by `parseEntry`.
     static func parse(_ input: String, now: Date = Date(), calendar: Calendar = .current) -> Result? {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch text {
@@ -135,6 +141,27 @@ enum DurationParser {
         guard let seconds = clockSeconds(text) ?? unitSeconds(text) ?? Int(text).map({ Double($0) * 60 }),
               seconds >= 1, seconds <= BuddyTimer.maxSeconds else { return nil }
         return .countdown(seconds.rounded())
+    }
+
+    /// What you type into Custom…: a timer as for `parse`, optionally followed by "#label"
+    /// (everything after the first "#", spaces allowed): "30m #study", "@3pm #stand-up",
+    /// "sw #run". A label alone ("#study") starts a labelled stopwatch.
+    static func parseEntry(_ input: String, now: Date = Date(),
+                           calendar: Calendar = .current) -> (result: Result, note: String?)? {
+        let parts = input.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+        let timerText = parts[0].trimmingCharacters(in: .whitespaces)
+        let note = parts.count > 1 ? cleanNote(String(parts[1])) : nil
+        if timerText.isEmpty {
+            return note.map { (.stopwatch, $0) }
+        }
+        return parse(timerText, now: now, calendar: calendar).map { ($0, note) }
+    }
+
+    /// A label as stored: trimmed, without a leading "#", nil when empty.
+    static func cleanNote(_ text: String) -> String? {
+        var note = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        while note.hasPrefix("#") { note = String(note.dropFirst()).trimmingCharacters(in: .whitespaces) }
+        return note.isEmpty ? nil : note
     }
 
     /// Short description for menus and messages: "1h 30m", "45m", "1m 30s".

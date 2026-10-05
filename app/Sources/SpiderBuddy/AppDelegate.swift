@@ -45,7 +45,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func timerHubItem(_ pet: PetController) -> HubItem {
         let timer = pet.timer
         if timer.isActive {
-            return .submenu("Timer   \(timer.display)", [
+            let title = timer.note.map { "Timer   \(timer.display) · \($0)" } ?? "Timer   \(timer.display)"
+            return .submenu(title, [
                 .action(timer.isPaused ? "Resume" : "Pause") { pet.toggleTimerPause() },
                 .action("Stop") { pet.stopTimer() },
             ])

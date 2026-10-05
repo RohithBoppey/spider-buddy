@@ -27,11 +27,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    /// "Time's up!" with which timer it was. Silent: the alarm sound plays separately.
-    func timerFinished(description: String) {
+    /// "Time's up!" with which timer it was ("Time's up! — study"). Silent: the alarm sound plays separately.
+    func timerFinished(description: String, note: String?) {
         guard Settings.shared.timerNotify else { return }
         let content = UNMutableNotificationContent()
-        content.title = "Time's up!"
+        content.title = note.map { "Time's up! — \($0)" } ?? "Time's up!"
         content.body = "Your \(description) timer has finished."
         let request = UNNotificationRequest(identifier: "timer-finished", content: content, trigger: nil)
         center.add(request) { error in

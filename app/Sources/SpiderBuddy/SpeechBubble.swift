@@ -34,7 +34,7 @@ final class SpeechBubble: NSPanel {
     }
     static let gapBeside: CGFloat = 22   // points from the face to the tail tip, bubble beside the face
     static let gapAbove: CGFloat = 20    // ... bubble above the face
-    static let maxTextWidth: CGFloat = 150
+    static let maxTextWidth: CGFloat = 150   // speech lines wrap here; the timer sets its own (wideText)
 
     private let bubbleView = BubbleView()
 
@@ -74,6 +74,12 @@ final class SpeechBubble: NSPanel {
     var fontSize: CGFloat? {
         get { bubbleView.fontSize }
         set { if newValue != bubbleView.fontSize { bubbleView.fontSize = newValue } }
+    }
+
+    /// Lets one-line content (the timer readout with its label) run wider than speech lines before wrapping.
+    var wideText: Bool {
+        get { bubbleView.wideText }
+        set { if newValue != bubbleView.wideText { bubbleView.wideText = newValue } }
     }
 
     /// Set to make the bubble clickable (the timer); nil = clicks pass through, as for speech.
@@ -148,6 +154,7 @@ final class BubbleView: NSView {
     /// The icon to draw now: the click's action while hovered, otherwise the state.
     private var shownIcon: SpeechBubble.Icon? { isHovering && onClick != nil ? hoverIcon ?? icon : icon }
     var fontSize: CGFloat? { didSet { needsDisplay = true } }
+    var wideText = false { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
     private var side = SpeechBubble.Side.right
     private var tailAt: CGFloat = 0
@@ -161,6 +168,7 @@ final class BubbleView: NSView {
     private var measured: (key: String, size: CGSize)?
 
     private var fontKey: String { "\(SpeechBubble.usePixelFont ? "pixel" : "system")-\(fontSize ?? 8)" }
+    private var maxTextWidth: CGFloat { wideText ? SpeechBubble.maxTextWidth * 2.5 : SpeechBubble.maxTextWidth }
 
     private var attributes: [NSAttributedString.Key: Any] {
         let key = fontKey
@@ -179,10 +187,10 @@ final class BubbleView: NSView {
     }
 
     private func textSize() -> CGSize {
-        let key = fontKey + "\u{0}" + text
+        let key = fontKey + "\u{0}\(maxTextWidth)\u{0}" + text
         if let measured, measured.key == key { return measured.size }
         let rect = (text as NSString).boundingRect(
-            with: CGSize(width: SpeechBubble.maxTextWidth, height: .greatestFiniteMagnitude),
+            with: CGSize(width: maxTextWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes)
         let size = CGSize(width: ceil(rect.width), height: ceil(rect.height))
         measured = (key, size)

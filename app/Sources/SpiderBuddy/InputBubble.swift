@@ -18,6 +18,7 @@ final class InputBubble: NSPanel, NSTextFieldDelegate, NSWindowDelegate {
     private let hint = NSTextField(labelWithString: "")
     private let frameView = FrameView()
     private var hintText = ""
+    private var allowsEmpty = false
     private var outsideClicks: Any?   // global monitor while open: a click in another app closes it
 
     init() {
@@ -53,13 +54,15 @@ final class InputBubble: NSPanel, NSTextFieldDelegate, NSWindowDelegate {
 
     var isOpen: Bool { isVisible }
 
-    /// Opens empty, with `placeholder` in the field and `hint` (keys to press) underneath,
-    /// pointing at `face` like a speech bubble.
-    func show(placeholder: String, hint hintText: String, pointingAt face: NSPoint,
-              side: SpeechBubble.Side, within bounds: NSRect) {
+    /// Opens with `text` (selected, so typing replaces it), `placeholder` when empty and `hint`
+    /// (keys to press) underneath, pointing at `face` like a speech bubble. Enter on an empty
+    /// field submits "" with `allowsEmpty`, otherwise it just closes.
+    func show(placeholder: String, hint hintText: String, text: String = "", allowsEmpty: Bool = false,
+              pointingAt face: NSPoint, side: SpeechBubble.Side, within bounds: NSRect) {
         let font = Self.font
+        self.allowsEmpty = allowsEmpty
         field.font = font
-        field.stringValue = ""
+        field.stringValue = text
         field.placeholderAttributedString = NSAttributedString(
             string: placeholder, attributes: [.font: font, .foregroundColor: Self.hintColor])
         self.hintText = hintText
@@ -78,6 +81,7 @@ final class InputBubble: NSPanel, NSTextFieldDelegate, NSWindowDelegate {
         setFrame(frame, display: true)
         makeKeyAndOrderFront(nil)
         makeFirstResponder(field)
+        field.currentEditor()?.selectAll(nil)
         // Spider Buddy is never the active app, so clicking another app may not take the
         // keyboard from this panel (no windowDidResignKey): watch for those clicks too.
         if outsideClicks == nil {
@@ -118,7 +122,7 @@ final class InputBubble: NSPanel, NSTextFieldDelegate, NSWindowDelegate {
         switch selector {
         case #selector(NSResponder.insertNewline(_:)):
             let text = field.stringValue.trimmingCharacters(in: .whitespaces)
-            if text.isEmpty || onSubmit?(text) ?? true { dismiss() }
+            if (text.isEmpty && !allowsEmpty) || onSubmit?(text) ?? true { dismiss() }
             return true
         case #selector(NSResponder.cancelOperation(_:)):
             dismiss()

@@ -67,6 +67,7 @@ final class PetController {
     private var bubbleTicksLeft = 0           // > 0 while a bubble is showing
     private var bubbleIsRandom = false        // a random line (not one he says because you asked)
     private var pendingClick: Timer?          // a single click, waiting to see if a second one follows
+    private var pendingBubbleClick: Timer?    // the same, for a click on the timer bubble
     private var isHubOpen = false             // right-click hub showing: he holds still beside it
     private var webDropSoundDue = false       // you put him on the top edge: stretch sound when he slides down
 
@@ -655,6 +656,7 @@ final class PetController {
         bubble.icon = icon
         bubble.hoverIcon = hoverIcon
         bubble.fontSize = fontSize
+        bubble.wideText = onClick != nil   // the timer: readout and label on one line
         bubble.onClick = onClick
     }
 
@@ -662,7 +664,7 @@ final class PetController {
     /// (only with no timer) a new random line when one is due.
     private func updateBubble() {
         if timer.checkFinished() {
-            Notifier.shared.timerFinished(description: timer.description ?? "")
+            Notifier.shared.timerFinished(description: timer.description ?? "", note: timer.note)
             alarmTicksLeft = alarmTicks
             timerFinished()
         }
@@ -719,20 +721,20 @@ final class PetController {
 
     // MARK: - Timer
 
-    func startTimer(seconds: TimeInterval, label: String? = nil) {
+    func startTimer(seconds: TimeInterval, label: String? = nil, note: String? = nil) {
         alarmTicksLeft = 0
         SoundEffects.shared.stop(.timerDone)
         Notifier.shared.clearTimerFinished()
         Notifier.shared.requestPermission()
-        timer.start(seconds: seconds, label: label)
+        timer.start(seconds: seconds, label: label, note: note)
         SoundEffects.shared.play(.timerStart)
         hideBubble()
     }
 
-    func startStopwatch() {
+    func startStopwatch(note: String? = nil) {
         alarmTicksLeft = 0
         SoundEffects.shared.stop(.timerDone)
-        timer.startStopwatch()
+        timer.startStopwatch(note: note)
         SoundEffects.shared.play(.timerStart)
         hideBubble()
     }
@@ -748,24 +750,63 @@ final class PetController {
         hideBubble()
         input.onSubmit = { [weak self] text in self?.submitTimer(text) ?? true }
         input.onClose = nil
-        input.show(placeholder: "25m, 1:30, @3pm", hint: "Enter to start · Esc to cancel",
+        input.show(placeholder: "25m, 1:30, @3pm #study", hint: "Enter to start · Esc to cancel",
                    pointingAt: face, side: bubbleSide, within: screen.visibleFrame)
     }
 
     private func submitTimer(_ text: String) -> Bool {
-        switch DurationParser.parse(text) {
-        case .countdown(let seconds):
-            startTimer(seconds: seconds)
-            Settings.shared.addRecentTimer(seconds)
-        case .until(let seconds, let label):
-            startTimer(seconds: seconds, label: label)
-        case .stopwatch:
-            startStopwatch()
-        case nil:
-            input.showError("Try 45m, 1h30m, 1:30 or @3pm")
+        guard let (result, note) = DurationParser.parseEntry(text) else {
+            input.showError("Try 45m, 1:30 or @3pm, then #label")
             return false
         }
+        switch result {
+        case .countdown(let seconds):
+            startTimer(seconds: seconds, note: note)
+            Settings.shared.addRecentTimer(seconds)
+        case .until(let seconds, let label):
+            startTimer(seconds: seconds, label: label, note: note)
+        case .stopwatch:
+            startStopwatch(note: note)
+        }
         return true
+    }
+
+    /// Double-click on the timer bubble: add, change or (left empty) remove its label.
+    private func editTimerNote() {
+        guard timer.isActive, !isHeld, !isFlying, let face = facePoint() else { return }
+        cancelPendingClick()
+        bubble.hide()
+        input.onSubmit = { [weak self] text in
+            self?.timer.note = DurationParser.cleanNote(text)
+            return true
+        }
+        input.onClose = nil
+        input.show(placeholder: "Label, like study", hint: "Enter to save · empty removes · Esc to cancel",
+                   text: timer.note ?? "", allowsEmpty: true,
+                   pointingAt: face, side: bubbleSide, within: screen.visibleFrame)
+    }
+
+    /// One click on the timer bubble pauses or resumes, two edit its label; the single click
+    /// waits `doubleClickSeconds` to tell them apart.
+    private func timerBubbleClicked() {
+        if pendingBubbleClick != nil {
+            pendingBubbleClick?.invalidate()
+            pendingBubbleClick = nil
+            editTimerNote()
+            return
+        }
+        let timer = Timer(timeInterval: doubleClickSeconds, repeats: false) { [weak self] _ in
+            self?.pendingBubbleClick = nil
+            self?.toggleTimerPause()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pendingBubbleClick = timer
+    }
+
+    /// The label as the bubble shows it: up to 14 characters.
+    private var shortNote: String? {
+        guard let note = timer.note else { return nil }
+        return note.count > 14 ? note.prefix(13).trimmingCharacters(in: .whitespaces) + "…" : note
     }
 
     func stopTimer() {
@@ -790,12 +831,14 @@ final class PetController {
             }
             // always the largest size, whatever the timer size setting: it has to be noticed
             let largest = TimerSize.allCases.map(\.fontSize).max()
-            styleBubble("Time's up!", icon: .clock, fontSize: largest) { [weak self] in self?.dismissTimeUp() }
+            let text = shortNote.map { "Time's up!\n\($0)" } ?? "Time's up!"
+            styleBubble(text, icon: .clock, fontSize: largest) { [weak self] in self?.dismissTimeUp() }
         } else {
             // hovering shows what a click does: pause a running timer, resume a paused one
-            styleBubble(timer.display, icon: timer.isPaused ? .pause : .clock,
+            let text = shortNote.map { "\(timer.display)  \($0)" } ?? timer.display
+            styleBubble(text, icon: timer.isPaused ? .pause : .clock,
                         hoverIcon: timer.isPaused ? .play : .pause, fontSize: size) {
-                [weak self] in self?.toggleTimerPause()
+                [weak self] in self?.timerBubbleClicked()
             }
         }
         positionBubble()
