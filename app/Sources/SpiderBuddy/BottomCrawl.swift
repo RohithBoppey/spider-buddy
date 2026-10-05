@@ -2,6 +2,7 @@ import CoreGraphics
 
 /// Bottom edge: crawls along the screen's bottom in short bursts, pausing in a crouch between
 /// them (sometimes for long), often turning around, with a tiny jitter. Lands in a crouch first.
+/// Also drives the ceiling crawl (same motion, frames flipped upside down).
 struct BottomCrawl {
     // Tune these, then rebuild.
     static let speeds: ClosedRange<CGFloat> = 32...48          // points per second while crawling
@@ -24,6 +25,7 @@ struct BottomCrawl {
     var phase: Phase = .landing(ticks: 5)
     var cycleIndex = 0               // position in the crawl cycle
     var lift: CGFloat = 0            // jitter: points above the ground for this frame
+    private(set) var bursts = 0      // bursts finished so far
     private var speed = BottomCrawl.randomSpeed()
     private var remaining = CGFloat.random(in: BottomCrawl.burstDistances)
     private var travelled: CGFloat = 0
@@ -37,6 +39,11 @@ struct BottomCrawl {
     var isCrouching: Bool {
         if case .crawl = phase { return false }
         return true
+    }
+
+    var isResting: Bool {
+        if case .rest = phase { return true }
+        return false
     }
 
     /// `bounds`: the head anchor's allowed x range on this screen.
@@ -89,6 +96,7 @@ struct BottomCrawl {
         }
 
         if remaining <= 0 {
+            bursts += 1
             let long = Double.random(in: 0..<1) < Self.longPauseChance
             phase = .rest(ticks: Self.scaledPause(Int.random(in: long ? Self.longPauses : Self.shortPauses)))
             lift = 0

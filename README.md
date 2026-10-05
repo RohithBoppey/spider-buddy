@@ -15,7 +15,8 @@ He hangs from the menu bar on a web, crawls along the edges of your screen and d
 
 ## ✨ What he does
 
-- 🕸️ **Hangs from the top** of your screen on a web, floating above every app
+- 🕸️ **Hangs from the top** of your screen on a web, floating above every app, and now and then climbs
+  up to crawl upside down along the top edge before dropping on a new web
 - 🧗 **Crawls** along the bottom and up the walls, then rests a while
 - 💬 **Speech bubbles** with little nudges (*Drink some water!*) in a pixel font
 - 🖐️ **Pick him up** and drop him somewhere else, or send him to any edge from the 🕷️ menu

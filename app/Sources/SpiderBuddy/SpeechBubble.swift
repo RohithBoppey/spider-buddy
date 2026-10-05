@@ -18,7 +18,7 @@ enum SpeechLines {
 /// pointing at a spot (his face) from a gap away.
 final class SpeechBubble: NSPanel {
     /// Where the bubble sits relative to the face.
-    enum Side { case left, right, above }
+    enum Side { case left, right, above, below }
 
     /// A small pixel icon drawn before the text (the pixel font has no emoji).
     enum Icon { case clock, pause, play }
@@ -117,17 +117,19 @@ final class SpeechBubble: NSPanel {
             frame.size = CGSize(width: box.width + tail, height: box.height)
             frame.origin.x = side == .right ? face.x + Self.gapBeside : face.x - Self.gapBeside - frame.width
             frame.origin.y = min(max(face.y - box.height / 2, bounds.minY), bounds.maxY - box.height)
-        case .above:
+        case .above, .below:
             frame.size = CGSize(width: box.width, height: box.height + tail)
             frame.origin.x = min(max(face.x - box.width / 3, bounds.minX), bounds.maxX - box.width)
-            frame.origin.y = min(face.y + Self.gapAbove, bounds.maxY - frame.height)
+            frame.origin.y = side == .above
+                ? min(face.y + Self.gapAbove, bounds.maxY - frame.height)
+                : max(face.y - Self.gapAbove - frame.height, bounds.minY)
         }
         frame = frame.integral
         // tail position along its edge (view coordinates, y down), aimed at the face
         let tailAt: CGFloat
         switch side {
         case .right, .left: tailAt = frame.maxY - face.y
-        case .above: tailAt = face.x - frame.minX
+        case .above, .below: tailAt = face.x - frame.minX
         }
         return (frame, side, tailAt)
     }
@@ -304,6 +306,7 @@ final class BubbleView: NSView {
     static func box(size: CGSize, side: SpeechBubble.Side) -> CGRect {
         var box = CGRect(origin: .zero, size: size)
         if side == .right { box.origin.x = tailExtent }   // tail on the left, pointing left at the face
+        if side == .below { box.origin.y = tailExtent }   // tail on top, pointing up at the face
         return box                                        // .left: tail on the right; .above: tail below
     }
 
@@ -312,7 +315,7 @@ final class BubbleView: NSView {
         let o = outline
         // tail position along its edge, kept clear of the stepped corners
         let steps = 4, step = tailLength / CGFloat(steps)
-        let along: CGFloat = side == .above ? box.width : box.height
+        let along: CGFloat = side == .above || side == .below ? box.width : box.height
         let at = min(max(tailAt, 9), along - 9)
 
         // outline pass (grow = o), then paper pass (grow = 0) on top
@@ -335,6 +338,9 @@ final class BubbleView: NSView {
                 case .above:
                     let y = box.maxY + CGFloat(i) * step
                     NSRect(x: at - half, y: y - o, width: 2 * half, height: step + o + grow).fill()
+                case .below:
+                    let y = box.minY - CGFloat(i + 1) * step
+                    NSRect(x: at - half, y: y - grow, width: 2 * half, height: step + grow + o).fill()
                 }
             }
         }

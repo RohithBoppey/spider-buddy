@@ -41,6 +41,9 @@ final class PetController {
     private let dangle: [Sprite]                   // 102, 103
     private let crouch: [Bool: Sprite]             // 088, keyed by facing right
     private let crawlCycle: [Bool: [Sprite]]       // 089..097, keyed by facing right
+    private let ceilingCrouch: [Bool: Sprite]      // 088 upside down, keyed by facing right
+    private let ceilingCycle: [Bool: [Sprite]]     // 089..097 upside down
+    private let ceilingTingle: Sprite              // 087 upside down
     private let wallReady: [Bool: Sprite]          // 018, keyed by on the right wall
     private let wallTransition: [WallKey: [Sprite]] // 129..131
     private let wallCycle: [WallKey: [Sprite]]     // 132..141
@@ -48,6 +51,7 @@ final class PetController {
     private indirect enum Mode {
         case top(TopHang)
         case bottom(BottomCrawl)
+        case ceiling(BottomCrawl, burstsLeft: Int)   // upside down below the menu bar, then back on a web
         case wall(WallCling)
         case held(ticks: Int)
         case flying                           // window animating to an edge (fall or zip)
@@ -94,6 +98,10 @@ final class PetController {
         let cycleRight = crawl.filter { $0 !== crouchRight }
         crouch = [true: crouchRight, false: crouchRight.mirrored()]
         crawlCycle = [true: cycleRight, false: cycleRight.map { $0.mirrored() }]
+        // the ceiling crawl: the bottom crawl upside down
+        ceilingCrouch = crouch.mapValues { $0.flippedVertically() }
+        ceilingCycle = crawlCycle.mapValues { $0.map { $0.flippedVertically() } }
+        ceilingTingle = pickup[0].flippedVertically()
 
         wallReady = [true: ready[0], false: ready[0].mirrored()]
         let transitionLeft = Array(climb.prefix(3)), cycleLeft = Array(climb.dropFirst(3))
@@ -233,11 +241,24 @@ final class PetController {
     private func advanced(_ mode: Mode) -> Mode {
         switch mode {
         case .top(var top):
+            // the ceiling is the screen's physical top: a climb carries on through the menu bar
+            let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
+            top.ceilingLength = -Int((menuBar / scale).rounded(.down))
             top.tick()
+            if top.reachedCeiling {   // crawls along the ceiling for a few bursts, at the bottom crawl's pace
+                return .ceiling(BottomCrawl(x: clampedCrawlX(top.x, on: screen), cycleCount: crawlCycle[true]!.count),
+                                burstsLeft: Int.random(in: 2...4))
+            }
             return .top(top)
         case .bottom(var bottom):
             bottom.tick(bounds: crawlBounds(on: screen))
             return .bottom(bottom)
+        case .ceiling(var ceiling, let burstsLeft):
+            ceiling.tick(bounds: crawlBounds(on: screen))
+            if ceiling.isResting && ceiling.bursts >= burstsLeft {   // done: a new web, and down he goes
+                return .top(TopHang(x: clampedHangX(ceiling.x, on: screen), settleTicks: 3))
+            }
+            return .ceiling(ceiling, burstsLeft: burstsLeft)
         case .wall(var wall):
             wall.tick(bounds: wallBounds(on: screen))
             return .wall(wall)
@@ -260,6 +281,11 @@ final class PetController {
                 ? crouch[bottom.facingRight]!
                 : crawlCycle[bottom.facingRight]![bottom.cycleIndex]
             layoutOnGround(sprite, anchor: sprite.anchor!, x: bottom.x, lift: bottom.lift)
+        case .ceiling(let ceiling, _):
+            let sprite = ceiling.isCrouching
+                ? ceilingCrouch[ceiling.facingRight]!
+                : ceilingCycle[ceiling.facingRight]![ceiling.cycleIndex]
+            layoutOnCeiling(sprite, anchor: sprite.anchor!, x: ceiling.x, drop: ceiling.lift)
         case .wall(let wall):
             let sprite = wallSprite(for: wall)
             layoutOnWall(sprite, anchor: sprite.anchor!, onRight: wall.onRight, y: wall.y)
@@ -276,6 +302,9 @@ final class PetController {
             case .bottom(let bottom):
                 let sprite = tingle[true]!
                 layoutOnGround(sprite, anchor: CGPoint(x: sprite.width / 2, y: sprite.height), x: bottom.x, lift: 0)
+            case .ceiling(let ceiling, _):
+                let sprite = ceilingTingle   // feet up against the ceiling
+                layoutOnCeiling(sprite, anchor: CGPoint(x: sprite.width / 2, y: 0), x: ceiling.x, drop: 0)
             case .wall(let wall):
                 // facing away from the wall, back against it
                 let sprite = tingle[!wall.onRight]!
@@ -309,6 +338,14 @@ final class PetController {
     private func layoutOnGround(_ sprite: Sprite, anchor: CGPoint, x: CGFloat, lift: CGFloat) {
         let origin = NSPoint(x: (x - anchor.x * scale).rounded(),
                              y: screen.frame.minY + (CGFloat(sprite.height) - anchor.y) * scale + lift)
+        place(sprite, origin: origin)
+    }
+
+    /// On the ceiling, the screen's physical top (over the menu bar): the (upside-down) sprite's
+    /// anchor row on that edge at screen x, `drop` points down (the crawl's jitter, mirrored).
+    private func layoutOnCeiling(_ sprite: Sprite, anchor: CGPoint, x: CGFloat, drop: CGFloat) {
+        let origin = NSPoint(x: (x - anchor.x * scale).rounded(),
+                             y: screen.frame.maxY - (CGFloat(sprite.height) - anchor.y) * scale - drop)
         place(sprite, origin: origin)
     }
 
@@ -414,9 +451,18 @@ final class PetController {
     }
 
     /// Web sounds: the slide down after you put him on the top edge, and (if allowed) his idle yo-yo.
+    /// Also the ceiling trip, which he makes on his own (idle sounds): up the web, and the web back down.
     private func playWebSounds(from old: Mode, to new: Mode) {
-        guard case .top(let before) = old, case .top(let after) = new,
-              !hiddenForFullscreen, !isHiddenByUser else { return }
+        guard !hiddenForFullscreen, !isHiddenByUser else { return }
+        if case .ceiling = old, case .top = new {
+            SoundEffects.shared.play(.thwip, ambient: true)
+            return
+        }
+        guard case .top(let before) = old, case .top(let after) = new else { return }
+        if after.isClimbing && !before.isClimbing {
+            SoundEffects.shared.play(.stretch, ambient: true)
+            return
+        }
         if after.isDropping && !before.isDropping {
             if webDropSoundDue { SoundEffects.shared.play(.stretch) }
             webDropSoundDue = false
@@ -580,6 +626,9 @@ final class PetController {
         case .bottom(var bottom):
             bottom.x = clampedCrawlX(movedX(bottom.x), on: new)
             return .bottom(bottom)
+        case .ceiling(var ceiling, let burstsLeft):
+            ceiling.x = clampedCrawlX(movedX(ceiling.x), on: new)
+            return .ceiling(ceiling, burstsLeft: burstsLeft)
         case .wall(var wall):
             wall.y = clampedWallY(movedY(wall.y), on: new)
             return .wall(wall)
@@ -615,7 +664,7 @@ final class PetController {
 
     private var isOnBottomOrWall: Bool {
         switch mode {
-        case .bottom, .wall: return true
+        case .bottom, .ceiling, .wall: return true
         default: return false
         }
     }
@@ -624,17 +673,19 @@ final class PetController {
     private var canSpeak: Bool {
         switch mode {
         case .top: return true
-        case .bottom(let bottom): if case .rest = bottom.phase { return true }
+        case .bottom(let bottom), .ceiling(let bottom, _): if case .rest = bottom.phase { return true }
         case .wall(let wall): if case .ready = wall.phase { return true }
         default: break
         }
         return false
     }
 
-    /// Which side of his face the bubble goes: away from walls, above him on the bottom edge.
+    /// Which side of his face the bubble goes: away from walls, above him on the bottom edge,
+    /// below him on the ceiling.
     private var bubbleSide: SpeechBubble.Side {
         switch mode {
         case .bottom: return .above
+        case .ceiling: return .below
         case .wall(let wall): return wall.onRight ? .left : .right
         default: return .right
         }
