@@ -79,7 +79,7 @@ struct TopHang {
         case .idle(let n):
             if n > 1 {
                 phase = .idle(ticks: n - 1)
-            } else if Double.random(in: 0..<1) < Self.ceilingChance {
+            } else if Settings.shared.ceilingCrawl && Double.random(in: 0..<1) < Self.ceilingChance {
                 phase = .climb(ticks: 0)
             } else if Double.random(in: 0..<1) < Self.yoyoChance {
                 phase = .yoyo(target: yoyoTarget(), ticks: 0)
@@ -107,12 +107,15 @@ struct TopHang {
     }
 
     /// Moves to a new resting height (Settings > Web length changed) by sliding along the web.
+    /// A climb to the ceiling carries on, unless the ceiling crawl was just turned off.
     mutating func settleAtRestingHeight() {
         switch phase {
         case .idle, .accent, .yoyo:
             if webLength != Self.webTarget { phase = .yoyo(target: Self.webTarget, ticks: 0) }
-        case .settle, .drop, .climb:
-            break   // the drop already ends at the resting height; a climb carries on to the ceiling
+        case .climb:
+            if !Settings.shared.ceilingCrawl { phase = .yoyo(target: Self.webTarget, ticks: 0) }
+        case .settle, .drop:
+            break   // the drop already ends at the resting height
         }
     }
 

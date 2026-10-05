@@ -7,6 +7,7 @@ enum SettingsKey {
     static let size = "size"
     static let energy = "energy"
     static let webLength = "webLength"
+    static let ceilingCrawl = "ceilingCrawl"
     static let followActiveDisplay = "followActiveDisplay"
     static let bubbleFrequency = "bubbleFrequency"
     static let bubbleFont = "bubbleFont"
@@ -15,6 +16,7 @@ enum SettingsKey {
     static let sfxAmbient = "sfxAmbient"
     static let timerSize = "timerSize"
     static let recentTimers = "recentTimers"
+    static let lastTimerEntry = "lastTimerEntry"
     static let timerAlarm = "timerAlarm"
     static let timerNotify = "timerNotify"
     static let timerLabelLayout = "timerLabelLayout"
@@ -132,6 +134,7 @@ final class Settings {
             SettingsKey.size: PetSize.normal.rawValue,
             SettingsKey.energy: Energy.normal.rawValue,
             SettingsKey.webLength: WebLength.medium.rawValue,
+            SettingsKey.ceilingCrawl: true,
             SettingsKey.followActiveDisplay: true,
             SettingsKey.bubbleFrequency: BubbleFrequency.normal.rawValue,
             SettingsKey.bubbleFont: BubbleFont.pixel.rawValue,
@@ -177,16 +180,24 @@ final class Settings {
     /// Post a macOS notification when a timer ends.
     var timerNotify: Bool { defaults.bool(forKey: SettingsKey.timerNotify) }
 
-    /// Custom timer lengths in seconds, newest first (hub > Timer). Presets and "@3pm" times are not kept.
+    /// Timer lengths in seconds, newest first: the chips in the Timer… bubble. "@3pm" times are not kept.
     var recentTimers: [TimeInterval] {
         defaults.array(forKey: SettingsKey.recentTimers) as? [TimeInterval] ?? []
     }
 
     func addRecentTimer(_ seconds: TimeInterval) {
-        guard !BuddyTimer.presets.contains(seconds) else { return }
         let recent = [seconds] + recentTimers.filter { $0 != seconds }
         defaults.set(Array(recent.prefix(3)), forKey: SettingsKey.recentTimers)
     }
+
+    /// The last timer started from the Timer… bubble, as typed ("30m #study"): it opens pre-filled.
+    var lastTimerEntry: String? {
+        get { defaults.string(forKey: SettingsKey.lastTimerEntry) }
+        set { defaults.set(newValue, forKey: SettingsKey.lastTimerEntry) }
+    }
+
+    /// On the top edge, now and then climb up and crawl along the top (true) or only hang.
+    var ceilingCrawl: Bool { defaults.bool(forKey: SettingsKey.ceilingCrawl) }
 
     /// Follow the display with keyboard focus (true) or stay on the one he was left on.
     var followActiveDisplay: Bool { defaults.bool(forKey: SettingsKey.followActiveDisplay) }

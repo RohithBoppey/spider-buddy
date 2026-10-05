@@ -13,8 +13,6 @@ final class BuddyTimer {
     }
 
     static let maxSeconds: TimeInterval = 24 * 60 * 60
-    /// One-click lengths in hub > Timer.
-    static let presets: [TimeInterval] = [5 * 60, 15 * 60, 25 * 60]
 
     private(set) var state = State.idle
     /// How the running countdown was asked for, if not as a length ("3:00 PM" for "@3pm").

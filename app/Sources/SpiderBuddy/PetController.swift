@@ -215,6 +215,9 @@ final class PetController {
             top.settleAtRestingHeight()
             mode = .top(top)
         }
+        if case .ceiling(let ceiling, _) = mode, !Settings.shared.ceilingCrawl {   // only hang: back on a web now
+            mode = .top(TopHang(x: clampedHangX(ceiling.x, on: screen), settleTicks: 3))
+        }
         if ticksToBubble > bubbleEvery.upperBound { ticksToBubble = Int.random(in: bubbleEvery) }
         render()
         if bubbleTicksLeft > 0 { positionBubble() }   // new font or size
@@ -804,7 +807,13 @@ final class PetController {
         hideBubble()
         input.onSubmit = { [weak self] text in self?.submitTimer(text) ?? true }
         input.onClose = nil
+        // your last timer, ready to repeat with Enter; recent lengths as one-click chips
         input.show(placeholder: "25m, 1:30, @3pm #study", hint: "Enter to start · Esc to cancel",
+                   text: Settings.shared.lastTimerEntry ?? "",
+                   chips: Settings.shared.recentTimers.map(DurationParser.describe),
+                   onChip: { [weak self] chip in
+                       if self?.submitTimer(chip) == true { self?.input.dismiss() }
+                   },
                    pointingAt: face, side: bubbleSide, within: screen.visibleFrame)
     }
 
@@ -813,6 +822,7 @@ final class PetController {
             input.showError("Try 45m, 1:30 or @3pm, then #label")
             return false
         }
+        Settings.shared.lastTimerEntry = text.trimmingCharacters(in: .whitespaces)
         switch result {
         case .countdown(let seconds):
             startTimer(seconds: seconds, note: note)

@@ -25,6 +25,7 @@ private struct GeneralSettings: View {
     @AppStorage(SettingsKey.size) private var size = PetSize.normal
     @AppStorage(SettingsKey.energy) private var energy = Energy.normal
     @AppStorage(SettingsKey.webLength) private var webLength = WebLength.medium
+    @AppStorage(SettingsKey.ceilingCrawl) private var ceilingCrawl = true
     @AppStorage(SettingsKey.followActiveDisplay) private var followActiveDisplay = true
     @State private var autoUpdate = Updater.shared.automaticallyChecks
     private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -41,8 +42,13 @@ private struct GeneralSettings: View {
                 Picker("Web length", selection: $webLength) {
                     ForEach(WebLength.allCases) { Text($0.title).tag($0) }
                 }
+                Picker("On the top edge", selection: $ceilingCrawl) {
+                    Text("Hang and crawl").tag(true)
+                    Text("Only hang").tag(false)
+                }
             } footer: {
-                Text("Energy sets how fast he moves and how long he rests. Web length is how far he hangs below the menu bar.")
+                Text("Energy sets how fast he moves and how long he rests. Web length is how far he hangs below the menu bar. "
+                     + "With Hang and crawl he now and then climbs up and crawls along the top edge.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Displays") {

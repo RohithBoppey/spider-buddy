@@ -19,6 +19,9 @@ final class InputBubble: NSPanel, NSTextFieldDelegate, NSWindowDelegate {
     private let frameView = FrameView()
     private var hintText = ""
     private var allowsEmpty = false
+    private var chipButtons: [ChipView] = []
+    private var onChip: ((String) -> Void)?
+    private static let chipSpacing: CGFloat = 6
     private var outsideClicks: Any?   // global monitor while open: a click in another app closes it
 
     init() {
@@ -54,10 +57,12 @@ final class InputBubble: NSPanel, NSTextFieldDelegate, NSWindowDelegate {
 
     var isOpen: Bool { isVisible }
 
-    /// Opens with `text` (selected, so typing replaces it), `placeholder` when empty and `hint`
-    /// (keys to press) underneath, pointing at `face` like a speech bubble. Enter on an empty
-    /// field submits "" with `allowsEmpty`, otherwise it just closes.
+    /// Opens with `text` (selected, so typing replaces it), `placeholder` when empty, a row of
+    /// clickable `chips` (quick picks, passed to `onChip`) and `hint` (keys to press) underneath,
+    /// pointing at `face` like a speech bubble. Enter on an empty field submits "" with
+    /// `allowsEmpty`, otherwise it just closes.
     func show(placeholder: String, hint hintText: String, text: String = "", allowsEmpty: Bool = false,
+              chips: [String] = [], onChip: ((String) -> Void)? = nil,
               pointingAt face: NSPoint, side: SpeechBubble.Side, within bounds: NSRect) {
         let font = Self.font
         self.allowsEmpty = allowsEmpty
@@ -68,15 +73,39 @@ final class InputBubble: NSPanel, NSTextFieldDelegate, NSWindowDelegate {
         self.hintText = hintText
         setHint(hintText, color: Self.hintColor)
 
+        self.onChip = onChip
+        chipButtons.forEach { $0.removeFromSuperview() }
+        chipButtons = chips.map { chip in
+            let button = ChipView(title: chip, font: Self.chipFont) { [weak self] in self?.onChip?(chip) }
+            frameView.addSubview(button)
+            return button
+        }
+        // only as many chips as fit on one line
+        var used: CGFloat = 0
+        chipButtons = chipButtons.filter { button in
+            let fits = used + button.frame.width <= Self.fieldWidth
+            if fits { used += button.frame.width + Self.chipSpacing } else { button.removeFromSuperview() }
+            return fits
+        }
+        let chipsHeight = chipButtons.map(\.frame.height).max() ?? 0
+
         let fieldHeight = ceil(font.ascender - font.descender + font.leading) + 4
         let hintHeight = ceil(hint.intrinsicContentSize.height)
+        let chipsRow = chipButtons.isEmpty ? 0 : chipsHeight + Self.gap
         let pad = BubbleView.padding
-        let box = CGSize(width: Self.fieldWidth + 2 * pad, height: fieldHeight + Self.gap + hintHeight + 2 * pad)
+        let box = CGSize(width: Self.fieldWidth + 2 * pad,
+                         height: fieldHeight + Self.gap + chipsRow + hintHeight + 2 * pad)
         let (frame, side, tailAt) = SpeechBubble.placement(box: box, pointingAt: face, side: side, within: bounds)
         frameView.configure(box: BubbleView.box(size: box, side: side), side: side, tailAt: tailAt)
         let inner = frameView.box.insetBy(dx: pad, dy: pad)
         field.frame = NSRect(x: inner.minX, y: inner.minY, width: inner.width, height: fieldHeight)
-        hint.frame = NSRect(x: inner.minX, y: inner.minY + fieldHeight + Self.gap, width: inner.width, height: hintHeight)
+        var x = inner.minX
+        for button in chipButtons {
+            button.setFrameOrigin(NSPoint(x: x, y: inner.minY + fieldHeight + Self.gap))
+            x += button.frame.width + Self.chipSpacing
+        }
+        hint.frame = NSRect(x: inner.minX, y: inner.minY + fieldHeight + Self.gap + chipsRow,
+                            width: inner.width, height: hintHeight)
 
         setFrame(frame, display: true)
         makeKeyAndOrderFront(nil)
@@ -111,10 +140,9 @@ final class InputBubble: NSPanel, NSTextFieldDelegate, NSWindowDelegate {
         hint.textColor = color
     }
 
-    private static var font: NSFont {
-        if SpeechBubble.usePixelFont, let font = NSFont(name: "PressStart2P-Regular", size: 8) { return font }
-        return .monospacedSystemFont(ofSize: 11, weight: .regular)
-    }
+    /// The system font: easier to read and type in than the small pixel font (the frame stays pixel-style).
+    private static var font: NSFont { .systemFont(ofSize: 13) }
+    private static var chipFont: NSFont { .monospacedDigitSystemFont(ofSize: 11, weight: .medium) }
 
     // MARK: - Keys and focus
 
@@ -138,6 +166,41 @@ final class InputBubble: NSPanel, NSTextFieldDelegate, NSWindowDelegate {
 
     func windowDidResignKey(_ notification: Notification) {
         dismiss()   // clicked somewhere else
+    }
+
+    /// A quick pick under the field ("45m"), drawn to match the bubble: dark outline, light fill.
+    /// (System pill buttons don't draw in this never-active panel.)
+    private final class ChipView: NSView {
+        private static let padX: CGFloat = 7, padY: CGFloat = 2
+        private static let fill = NSColor(white: 0.9, alpha: 1)
+        private let title: String
+        private let attributes: [NSAttributedString.Key: Any]
+        private let onClick: () -> Void
+
+        init(title: String, font: NSFont, onClick: @escaping () -> Void) {
+            self.title = title
+            self.attributes = [.font: font, .foregroundColor: BubbleView.ink]
+            self.onClick = onClick
+            let text = (title as NSString).size(withAttributes: attributes)
+            super.init(frame: NSRect(x: 0, y: 0, width: ceil(text.width) + 2 * Self.padX,
+                                     height: ceil(text.height) + 2 * Self.padY))
+            toolTip = "Start \(title)"
+        }
+
+        required init?(coder: NSCoder) { fatalError("not used") }
+
+        override var isFlipped: Bool { true }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func mouseDown(with event: NSEvent) { onClick() }
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+
+        override func draw(_ dirtyRect: NSRect) {
+            BubbleView.ink.setFill()
+            bounds.fill()
+            Self.fill.setFill()
+            bounds.insetBy(dx: 1, dy: 1).fill()
+            (title as NSString).draw(at: NSPoint(x: Self.padX, y: Self.padY), withAttributes: attributes)
+        }
     }
 
     /// The bubble frame behind the field (same look as SpeechBubble).

@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .toggle("Speech Bubbles", isOn: Settings.shared.bubblesEnabled) { [weak self] in self?.toggleBubbles() },
             .toggle("Sounds", isOn: Settings.shared.sfxEnabled) { Settings.shared.sfxEnabled.toggle() },
             .separator,
-            timerHubItem(pet),
+        ] + timerHubItems(pet) + [
             .comingSoon("Ask AI"),
             .separator,
             .action("Quit") { NSApp.terminate(nil) },
@@ -41,28 +41,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         HubMenu.popUp(items, with: event, for: view)
     }
 
-    /// Timer ▸ : presets when idle; Pause/Resume and Stop while one runs (time left in the title).
-    private func timerHubItem(_ pet: PetController) -> HubItem {
+    /// Timer… and Stopwatch when idle; Pause/Resume (with the time and label) and Stop while one runs.
+    private func timerHubItems(_ pet: PetController) -> [HubItem] {
         let timer = pet.timer
         if timer.isActive {
-            let title = timer.note.map { "Timer   \(timer.display) · \($0)" } ?? "Timer   \(timer.display)"
-            return .submenu(title, [
-                .action(timer.isPaused ? "Resume" : "Pause") { pet.toggleTimerPause() },
-                .action("Stop") { pet.stopTimer() },
-            ])
+            let kind = timer.total == nil ? "stopwatch" : "timer"
+            let status = [timer.display, timer.note].compactMap { $0 }.joined(separator: " ")
+            return [
+                .action("\(timer.isPaused ? "Resume" : "Pause") \(kind) · \(status)") { pet.toggleTimerPause() },
+                .action("Stop \(kind)") { pet.stopTimer() },
+            ]
         }
-        func start(_ seconds: TimeInterval) -> HubItem {
-            .action(DurationParser.describe(seconds)) { pet.startTimer(seconds: seconds) }
-        }
-        let recent = Settings.shared.recentTimers
-        return .submenu("Timer", BuddyTimer.presets.map(start)
-            + (recent.isEmpty ? [] : [.separator] + recent.map(start))
-            + [
-                .separator,
-                // after the menu has closed, so the typing bubble can take the keyboard
-                .action("Custom…") { DispatchQueue.main.async { pet.askForTimer() } },
-                .action("Stopwatch") { pet.startStopwatch() },
-            ])
+        return [
+            // after the menu has closed, so the typing bubble can take the keyboard
+            .action("Timer…") { DispatchQueue.main.async { pet.askForTimer() } },
+            .action("Stopwatch") { pet.startStopwatch() },
+        ]
     }
 
     // MARK: - Menu bar
