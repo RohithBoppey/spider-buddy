@@ -28,3 +28,9 @@ the credit above; the tick-tock (BY-NC) also means it can't be used in a commerc
 
 Speech bubbles use [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) by CodeMan38,
 under the SIL Open Font License (`app/Resources/PressStart2P-OFL.txt`).
+
+## Charts
+
+The analytics page (menu bar → Show Analytics) draws its chart with [Chart.js](https://www.chartjs.org)
+4.4.1, under the MIT License (`app/Resources/Chart.js-LICENSE.txt`). The minified file is
+`app/Resources/chart.umd.min.js`, unchanged from cdnjs.

@@ -1,0 +1,413 @@
+<!doctype html>
+<!-- Spider Buddy analytics. AnalyticsReport.swift fills in Chart.js and the data, writes the
+     result to ~/Library/Application Support/SpiderBuddy/analytics.html and opens it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spider Buddy Analytics</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f3f2ef;
+    --surface: #fcfcfb;
+    --border: #e4e2dd;
+    --text: #0b0b0b;
+    --text-2: #52514e;
+    --text-3: #7a7974;
+    --accent: #c8102e;
+    --row-hover: #f0efec;
+    --untagged: #a8a7a1;
+    --other: #6f6e69;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #111110;
+      --surface: #1a1a19;
+      --border: #2e2e2c;
+      --text: #ffffff;
+      --text-2: #c3c2b7;
+      --text-3: #94938b;
+      --accent: #ff4b5c;
+      --row-hover: #242422;
+      --untagged: #6b6a64;
+      --other: #8f8e87;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #111110; --surface: #1a1a19; --border: #2e2e2c;
+    --text: #ffffff; --text-2: #c3c2b7; --text-3: #94938b; --accent: #ff4b5c;
+    --row-hover: #242422; --untagged: #6b6a64; --other: #8f8e87;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 40px 16px 64px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+  h1 { margin: 2px 0 0; font-size: 32px; letter-spacing: -.02em; }
+  .date { color: var(--text-2); }
+  .snapshot { font-size: 13px; color: var(--text-3); text-align: right; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .stat .label { font-size: 13px; color: var(--text-2); }
+  .stat .value { font-size: 28px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+  .breakdown { display: grid; grid-template-columns: 280px 1fr; gap: 32px; align-items: start; }
+  .donut { position: relative; width: 280px; height: 280px; }
+  .donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; text-align: center; }
+  .donut-center .big { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .donut-center .small { font-size: 13px; color: var(--text-2); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th { text-align: left; font-size: 12px; font-weight: 600; color: var(--text-3); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th.num, td.num { text-align: right; }
+  td { padding: 9px 8px; border-bottom: 1px solid var(--border); }
+  tr.tag-row { cursor: pointer; }
+  tr.tag-row:hover, tr.tag-row.hot { background: var(--row-hover); }
+  tr.tag-row:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }
+  .tag-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .tag-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag-name.untagged { font-style: italic; color: var(--text-2); }
+  .chev { color: var(--text-3); font-size: 11px; width: 10px; flex: none; transition: transform .15s; }
+  tr.open .chev { transform: rotate(90deg); }
+  .muted { color: var(--text-2); }
+
+  tr.detail > td { padding: 0 8px 12px 38px; background: var(--row-hover); }
+  .sessions { width: 100%; font-size: 13px; table-layout: fixed; }
+  .sessions td:nth-child(1) { width: 46%; }
+  .sessions td:nth-child(2) { width: 12%; }
+  .sessions td:nth-child(3) { width: 18%; }
+  .sessions td { border: 0; padding: 5px 8px 5px 0; color: var(--text-2); vertical-align: middle; }
+  .sessions td:first-child { color: var(--text); }
+  .pills { display: flex; flex-wrap: wrap; gap: 4px; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-2); white-space: nowrap; }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+  button {
+    font: inherit; font-size: 13px; font-weight: 550;
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; cursor: pointer;
+  }
+  button:hover { background: var(--row-hover); }
+
+  .note { margin-top: 16px; font-size: 13px; color: var(--text-3); }
+  .empty { text-align: center; padding: 56px 16px; }
+  .empty .spidey { font-size: 40px; }
+  .empty h2 { font-size: 18px; margin: 8px 0 4px; }
+
+  @media (max-width: 720px) {
+    main { padding-top: 24px; }
+    .breakdown { grid-template-columns: 1fr; }
+    .donut { margin: 0 auto; width: min(280px, 100%); }
+    .stats { grid-template-columns: 1fr 1fr; }
+    .stat .value { font-size: 22px; }
+    .snapshot { text-align: left; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <div class="eyebrow">Spider Buddy</div>
+      <h1>Today</h1>
+      <div class="date" id="date"></div>
+    </div>
+    <div class="snapshot" id="snapshot"></div>
+  </header>
+  <div id="content"></div>
+</main>
+
+<script>/*@CHARTJS@*/</script>
+<script>
+"use strict";
+const DATA = /*@DATA@*/null;
+
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const SLOTS = 8;
+
+// "1h 05m", "45m", "30s"
+function fmt(seconds) {
+  const s = Math.round(seconds);
+  if (s < 60) return s + "s";
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
+  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
+}
+const time = ms => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const hhmm = ms => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+const isoDay = ms => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const el = (tag, attrs = {}, ...children) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v; else if (k === "style") node.style.cssText = v; else node.setAttribute(k, v);
+  }
+  for (const c of children) node.append(c);
+  return node;
+};
+
+document.getElementById("date").textContent =
+  new Date(DATA.generatedAt).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+document.getElementById("snapshot").innerHTML =
+  `Snapshot taken at ${time(DATA.generatedAt)}<br>For fresh data: menu bar → Show Analytics`;
+
+// --- group sessions by tag; colours follow each tag (first used today = slot 1), never its rank
+const groups = new Map();
+for (const s of DATA.sessions) {
+  const key = s.tag ?? null;
+  if (!groups.has(key)) groups.set(key, { tag: key, sessions: [], seconds: 0 });
+  const g = groups.get(key);
+  g.sessions.push(s);
+  g.seconds += s.seconds;
+}
+const total = DATA.sessions.reduce((sum, s) => sum + s.seconds, 0);
+const tagged = [...groups.values()].filter(g => g.tag !== null);
+// more tags than colours: the biggest keep a colour, the rest share "other" in the chart
+const coloured = new Set(tagged.length <= SLOTS ? tagged
+  : [...tagged].sort((a, b) => b.seconds - a.seconds).slice(0, SLOTS - 1));
+let slot = 0;
+for (const g of tagged) g.color = coloured.has(g) ? css(`--s${++slot}`) : css("--other");
+if (groups.has(null)) groups.get(null).color = css("--untagged");
+
+const rows = [...groups.values()].sort((a, b) => b.seconds - a.seconds);
+const label = g => g.tag ?? "untagged";
+
+render();
+
+function render() {
+  const content = document.getElementById("content");
+  if (!DATA.sessions.length) {
+    content.append(el("div", { class: "card empty" },
+      el("div", { class: "spidey" }, "🕷️"),
+      el("h2", {}, "No sessions yet today"),
+      el("div", { class: "muted" }, "Right-click Spider Buddy → Timer… or Stopwatch. Your spidey-sense will track the rest."),
+      countingNote()));
+    return;
+  }
+
+  const stats = el("div", { class: "stats" },
+    stat("Time tracked", fmt(total)),
+    stat("Sessions", String(DATA.sessions.length)),
+    stat("Tags", String(tagged.length)));
+
+  const canvas = el("canvas", { role: "img", "aria-label": "Time by tag today" });
+  const center = el("div", { class: "donut-center" },
+    el("div", { class: "big", id: "center-big" }, fmt(total)),
+    el("div", { class: "small", id: "center-small" }, "today"));
+  const donut = el("div", { class: "donut" }, canvas, center);
+
+  const tbody = el("tbody");
+  rows.forEach((g, i) => tbody.append(...tagRows(g, i)));
+  const table = el("table", {},
+    el("thead", {}, el("tr", {},
+      el("th", {}, "Tag"), el("th", { class: "num" }, "Sessions"),
+      el("th", { class: "num" }, "Time"), el("th", { class: "num" }, "Share"))),
+    tbody);
+
+  const card = el("div", { class: "card" },
+    el("div", { class: "breakdown" }, donut, el("div", {}, el("h2", {}, "By tag"), table)),
+    el("div", { class: "actions" },
+      button("Download sessions CSV", downloadSessions),
+      button("Download tag totals CSV", downloadTotals)),
+    countingNote());
+  content.append(stats, card);
+  drawChart(canvas);
+}
+
+function stat(name, value) {
+  return el("div", { class: "stat" }, el("div", { class: "label" }, name), el("div", { class: "value" }, value));
+}
+
+function button(text, onClick) {
+  const b = el("button", { type: "button" }, text);
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function countingNote() {
+  const parts = [
+    "Counts running time only, pauses excluded.",
+    DATA.countUnfinished ? "Timers stopped early count for the time they ran."
+                         : "Timers stopped early aren't counted (change in Settings → Timer).",
+    `Stopwatches under ${DATA.minStopwatchMinutes} minutes are skipped.`,
+  ];
+  return el("p", { class: "note" }, parts.join(" "));
+}
+
+// a tag row, plus its (hidden) list of sessions
+function tagRows(g, index) {
+  const name = el("span", { class: "tag-name" + (g.tag === null ? " untagged" : "") }, label(g));
+  const row = el("tr", { class: "tag-row", tabindex: "0", "aria-expanded": "false", "data-index": index },
+    el("td", {}, el("div", { class: "tag-cell" },
+      el("span", { class: "chev" }, "▶"),
+      el("span", { class: "swatch", style: `background:${g.color}` }), name)),
+    el("td", { class: "num muted" }, String(g.sessions.length)),
+    el("td", { class: "num" }, fmt(g.seconds)),
+    el("td", { class: "num muted" }, total ? Math.round(g.seconds / total * 100) + "%" : "–"));
+
+  const list = el("table", { class: "sessions" });
+  for (const s of g.sessions) {
+    const pills = el("div", { class: "pills" },
+      el("span", { class: "pill" }, s.kind === "stopwatch" ? "stopwatch" : `${fmt(s.planned)} timer`));
+    if (s.kind === "timer" && !s.completed) pills.append(el("span", { class: "pill" }, "stopped early"));
+    list.append(el("tr", {},
+      el("td", {}, `${time(s.start)} – ${time(s.end)}` + (s.fromYesterday ? " (from yesterday)" : "")),
+      el("td", { class: "num" }, fmt(s.seconds)),
+      el("td", {}, s.pausedSeconds >= 60 ? `paused ${fmt(s.pausedSeconds)}` : ""),
+      el("td", {}, pills)));
+  }
+  const detail = el("tr", { class: "detail", hidden: "" }, el("td", { colspan: "4" }, list));
+
+  const toggle = () => {
+    const open = detail.hidden;
+    detail.hidden = !open;
+    row.classList.toggle("open", open);
+    row.setAttribute("aria-expanded", String(open));
+  };
+  row.addEventListener("click", toggle);
+  row.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+  row.addEventListener("mouseenter", () => highlight(index));
+  row.addEventListener("mouseleave", () => highlight(null));
+  g.toggle = toggle;
+  g.row = row;
+  return [row, detail];
+}
+
+let chart;
+function drawChart(canvas) {
+  chart = new Chart(canvas, {
+    type: "doughnut",
+    data: {
+      labels: rows.map(label),
+      datasets: [{
+        data: rows.map(g => g.seconds),
+        backgroundColor: rows.map(g => g.color),
+        borderColor: css("--surface"),
+        borderWidth: 2,
+        borderRadius: 4,
+        hoverOffset: 8,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: "68%",
+      layout: { padding: 10 },
+      animation: { animateRotate: true, animateScale: true, duration: 900, easing: "easeOutQuart" },
+      plugins: {
+        legend: { display: false },   // the table beside it is the legend
+        tooltip: {
+          backgroundColor: css("--surface"),
+          titleColor: css("--text"),
+          bodyColor: css("--text-2"),
+          borderColor: css("--border"),
+          borderWidth: 1,
+          padding: 10,
+          cornerRadius: 8,
+          boxPadding: 4,
+          usePointStyle: true,
+          callbacks: {
+            title: items => label(rows[items[0].dataIndex]),
+            label: item => {
+              const g = rows[item.dataIndex];
+              const n = g.sessions.length;
+              return ` ${fmt(g.seconds)} · ${Math.round(g.seconds / total * 100)}% · ${n} session${n === 1 ? "" : "s"}`;
+            },
+          },
+        },
+      },
+      onHover: (event, elements) => {
+        const i = elements.length ? elements[0].index : null;
+        event.native.target.style.cursor = i === null ? "default" : "pointer";
+        markRow(i);
+        showCenter(i);
+      },
+      onClick: (event, elements) => {
+        if (!elements.length) return;
+        const g = rows[elements[0].index];
+        g.toggle();
+        g.row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      },
+    },
+  });
+  canvas.addEventListener("mouseleave", () => { markRow(null); showCenter(null); });
+}
+
+// hovering a table row lights up its slice, and the other way round
+function highlight(index) {
+  if (!chart) return;
+  const active = index === null ? [] : [{ datasetIndex: 0, index }];
+  chart.setActiveElements(active);
+  chart.tooltip.setActiveElements(active, { x: 0, y: 0 });
+  chart.update();
+  markRow(index);
+  showCenter(index);
+}
+
+function markRow(index) {
+  rows.forEach((g, i) => g.row.classList.toggle("hot", i === index));
+}
+
+function showCenter(index) {
+  const g = index === null ? null : rows[index];
+  document.getElementById("center-big").textContent = fmt(g ? g.seconds : total);
+  document.getElementById("center-small").textContent = g ? label(g) : "today";
+}
+
+// --- CSV
+function csvCell(value) {
+  let v = value == null ? "" : String(value);
+  if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;             // keep spreadsheets from running it as a formula
+  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+function download(name, header, lines) {
+  const text = "﻿" + [header, ...lines].map(r => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+  const a = el("a", { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const minutes = seconds => (seconds / 60).toFixed(1);
+
+function downloadSessions() {
+  download(`spider-buddy-sessions-${isoDay(DATA.generatedAt)}.csv`,
+    ["date", "tag", "kind", "start", "end", "active_minutes", "paused_minutes", "planned_minutes", "status"],
+    DATA.sessions.map(s => [
+      isoDay(s.start), s.tag ?? "untagged", s.kind, hhmm(s.start), hhmm(s.end),
+      minutes(s.seconds), minutes(s.pausedSeconds), s.planned == null ? "" : minutes(s.planned),
+      s.kind === "stopwatch" ? "stopped" : s.completed ? "completed" : "stopped early",
+    ]));
+}
+
+function downloadTotals() {
+  download(`spider-buddy-tags-${isoDay(DATA.generatedAt)}.csv`,
+    ["date", "tag", "sessions", "active_minutes", "share_percent"],
+    rows.map(g => [isoDay(DATA.generatedAt), label(g), g.sessions.length, minutes(g.seconds),
+                   (g.seconds / total * 100).toFixed(1)]));
+}
+</script>
+</body>
+</html>

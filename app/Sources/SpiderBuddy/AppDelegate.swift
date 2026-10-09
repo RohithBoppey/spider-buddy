@@ -14,11 +14,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         self.pet = pet
+        _ = SessionStore.shared       // loads history and drops sessions older than 15 days
+        pet.timer.onSessionEnded = { SessionStore.shared.record($0) }
         pet.onHubRequested = { [weak self] event, view in self?.showHub(with: event, for: view) }
         SpeechBubble.registerFont()
         _ = Updater.shared            // starts automatic update checks
         setUpStatusItem()
         pet.start()
+    }
+
+    /// A timer or stopwatch still running is saved as a complete session.
+    func applicationWillTerminate(_ notification: Notification) {
+        pet?.timer.endForQuit()
     }
 
     // MARK: - Hub (right-click on him)
@@ -98,6 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(bubblesItem)
         menu.addItem(.separator())
 
+        menu.addItem(item("Show Analytics", #selector(showAnalytics)))
+
         menu.addItem(item("Settings…", #selector(showSettings), key: ","))
         let updates = NSMenuItem(title: "Check for Updates…", action: #selector(Updater.checkForUpdates(_:)),
                                  keyEquivalent: "")
@@ -142,6 +151,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleBubbles() {
         Settings.shared.bubblesEnabled.toggle()
         pet?.bubblesSettingChanged()
+    }
+
+    @objc private func showAnalytics() {
+        AnalyticsReport.show()
     }
 
     @objc private func showSettings() {

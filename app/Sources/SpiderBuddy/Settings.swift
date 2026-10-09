@@ -20,6 +20,7 @@ enum SettingsKey {
     static let timerAlarm = "timerAlarm"
     static let timerNotify = "timerNotify"
     static let timerLabelLayout = "timerLabelLayout"
+    static let analyticsCountUnfinished = "analyticsCountUnfinished"
 }
 
 enum PetSize: String, CaseIterable, Identifiable {
@@ -145,6 +146,7 @@ final class Settings {
             SettingsKey.timerAlarm: true,
             SettingsKey.timerNotify: true,
             SettingsKey.timerLabelLayout: TimerLabelLayout.horizontal.rawValue,
+            SettingsKey.analyticsCountUnfinished: false,
         ])
     }
 
@@ -179,6 +181,9 @@ final class Settings {
 
     /// Post a macOS notification when a timer ends.
     var timerNotify: Bool { defaults.bool(forKey: SettingsKey.timerNotify) }
+
+    /// Analytics also counts countdowns stopped before their end, for the time they ran.
+    var analyticsCountUnfinished: Bool { defaults.bool(forKey: SettingsKey.analyticsCountUnfinished) }
 
     /// Timer lengths in seconds, newest first: the chips in the Timer… bubble. "@3pm" times are not kept.
     var recentTimers: [TimeInterval] {

@@ -20,6 +20,12 @@ final class BuddyTimer {
     /// Your name for it ("study", from "30m #study"); editable while it runs.
     var note: String?
     var now: () -> Date = Date.init                     // replaceable in tests
+    /// Called with each session as it ends (finished, stopped, replaced or cut short by quitting).
+    var onSessionEnded: ((TimerSession) -> Void)?
+
+    /// The current session's running stretches so far, and when the open one began (nil while paused).
+    private var segments: [TimerSession.Segment] = []
+    private var runningSince: Date?
 
     /// Running or paused (not idle, not finished).
     var isActive: Bool {
@@ -42,16 +48,20 @@ final class BuddyTimer {
     }
 
     func start(seconds: TimeInterval, label: String? = nil, note: String? = nil) {
+        endSession(completed: false)
         self.label = label
         self.note = note
         let seconds = min(max(seconds, 1), Self.maxSeconds)
         state = .countdown(end: now().addingTimeInterval(seconds), total: seconds)
+        beginSession()
     }
 
     func startStopwatch(note: String? = nil) {
+        endSession(completed: false)
         label = nil
         self.note = note
         state = .stopwatch(start: now())
+        beginSession()
     }
 
     func togglePause() {
@@ -61,21 +71,56 @@ final class BuddyTimer {
         case .countdownPaused(let left, let total): state = .countdown(end: now.addingTimeInterval(left), total: total)
         case .stopwatch(let start): state = .stopwatchPaused(elapsed: now.timeIntervalSince(start))
         case .stopwatchPaused(let elapsed): state = .stopwatch(start: now.addingTimeInterval(-elapsed))
-        case .idle, .finished: break
+        case .idle, .finished: return
+        }
+        if runningSince == nil {
+            runningSince = now
+        } else {
+            closeSegment(at: now)
         }
     }
 
-    /// Stops a running timer or dismisses "Time's up!".
+    /// Stops a running timer or dismisses "Time's up!". A stopped stopwatch counts as complete;
+    /// a countdown stopped before its end does not.
     func stop() {
+        endSession(completed: total == nil)
         state = .idle
         note = nil
+    }
+
+    /// The app is quitting: a session still running is kept as complete.
+    func endForQuit() {
+        endSession(completed: true)
     }
 
     /// Turns a countdown that has run out into `.finished`. True exactly once per timer.
     func checkFinished() -> Bool {
         guard case .countdown(let end, let total) = state, now() >= end else { return false }
+        closeSegment(at: end)            // its end, not this (possibly late) tick
+        endSession(completed: true)
         state = .finished(at: end, total: total)
         return true
+    }
+
+    private func beginSession() {
+        segments = []
+        runningSince = now()
+    }
+
+    private func closeSegment(at end: Date) {
+        guard let start = runningSince else { return }
+        if end > start { segments.append(.init(start: start, end: end)) }
+        runningSince = nil
+    }
+
+    /// Reports the active session (if any) to `onSessionEnded`; the state itself is left to the caller.
+    private func endSession(completed: Bool) {
+        guard isActive || runningSince != nil else { return }
+        closeSegment(at: now())
+        let session = TimerSession(id: UUID(), kind: total == nil ? .stopwatch : .timer, tag: note,
+                                   planned: total, completed: completed, segments: segments)
+        segments = []
+        if !session.segments.isEmpty { onSessionEnded?(session) }
     }
 
     /// The countdown's full length (running, paused or finished), for messages like "Your 25m timer".
@@ -155,9 +200,9 @@ enum DurationParser {
         return parse(timerText, now: now, calendar: calendar).map { ($0, note) }
     }
 
-    /// A label as stored: trimmed, without a leading "#", nil when empty.
+    /// A label as stored: lowercase, trimmed, without a leading "#", nil when empty.
     static func cleanNote(_ text: String) -> String? {
-        var note = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var note = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         while note.hasPrefix("#") { note = String(note.dropFirst()).trimmingCharacters(in: .whitespaces) }
         return note.isEmpty ? nil : note
     }

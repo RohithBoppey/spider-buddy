@@ -141,6 +141,7 @@ private struct TimerSettings: View {
     @AppStorage(SettingsKey.timerLabelLayout) private var layout = TimerLabelLayout.horizontal
     @AppStorage(SettingsKey.timerAlarm) private var alarm = true
     @AppStorage(SettingsKey.timerNotify) private var notify = true
+    @AppStorage(SettingsKey.analyticsCountUnfinished) private var countUnfinished = false
     @State private var alarmPlaying = false
 
     var body: some View {
@@ -192,6 +193,14 @@ private struct TimerSettings: View {
                         }
                     }
                 }
+            }
+            Section {
+                Toggle("Count unfinished timers", isOn: $countUnfinished)
+            } header: {
+                Text("Analytics")
+            } footer: {
+                Text("When on, a timer you stop early counts for the time it ran. Stopwatches under \(Int(SessionStore.minStopwatchSeconds / 60)) minutes are never counted. History is kept for \(SessionStore.retentionDays) days. Open it from the menu bar: Show Analytics.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
