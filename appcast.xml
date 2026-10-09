@@ -6,6 +6,15 @@
     <title>Spider Buddy</title>
     <language>en</language>
     <item>
+      <title>Version 1.4.0</title>
+      <pubDate>Fri, 09 Oct 2026 09:41:35 GMT</pubDate>
+      <sparkle:version>1.4.0</sparkle:version>
+      <sparkle:shortVersionString>1.4.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<p>New: Show Analytics in the menu bar shows where your timer and stopwatch time went today: a donut chart by tag, the sessions for each tag, and CSV export. Tags are now always lowercase. Settings → Timer has a new option to count timers you stop early.</p>]]></description>
+      <enclosure url="https://github.com/RohithBoppey/spider-buddy/releases/download/v1.4.0/SpiderBuddy-1.4.0.dmg" type="application/octet-stream" sparkle:edSignature="6+X4J/1OFQDTBIqbYACRv/mTOj2sU2s2nhIrJq+EdkEGxx5D8A35e7/Xt1p14RYBRep87xAql0CJUp/YA2kWAQ==" length="2823382" />
+    </item>
+    <item>
       <title>Version 1.3.0</title>
       <pubDate>Mon, 05 Oct 2026 13:54:07 GMT</pubDate>
       <sparkle:version>1.3.0</sparkle:version>
